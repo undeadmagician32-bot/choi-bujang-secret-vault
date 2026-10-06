@@ -180,11 +180,21 @@
 
 ## 5단계 현재 상태: 자료 요청을 서버 한곳으로
 
-- 브라우저 코드(`public/index.html`)는 메모 자료를 Supabase에서 직접 읽거나 고치는 곳이 없습니다. Supabase 호출은 로그인(`onAuthStateChange`, `getSession`, `signInWithPassword`, `signOut`)뿐이고, 자료는 모두 서버 함수(`/api/notes`, `/api/memos`, `/api/memos/:id`)를 부릅니다. 그래서 이번 단계에서 화면 코드는 바꾸지 않았습니다.
+- 브라우저 코드(`public/index.html`)는 메모 자료를 Supabase에서 직접 읽거나 고치는 곳이 없습니다. 자료는 모두 서버 함수(`/api/notes`, `/api/memos`, `/api/memos/:id`)를 부릅니다.
+- **화면 코드에는 Supabase 키가 없습니다.** 저장점 때는 화면이 공개 키로 Supabase에 직접 로그인했는데, 심판 점검 「화면 코드에 공개 키가 없다」에 걸려서 로그인·세션 갱신·로그아웃을 서버 함수로 옮겼습니다. 서버가 같은 공식 SDK(`signInWithPassword`, `refreshSession`, `auth.admin.signOut`)를 부르고, 비밀번호와 토큰은 서버가 만들지도 저장하지도 않습니다(Supabase가 발급).
+
+| 경로 | 동작 |
+|---|---|
+| `POST /api/auth/login` | `{email, password}` → `{access_token, refresh_token, expires_at, email}`. 실패하면 Supabase가 알려 준 이유를 `message`로 돌려줌 |
+| `POST /api/auth/refresh` | `{refresh_token}` → 새 세션. 만료·취소된 토큰이면 401 |
+| `POST /api/auth/logout` | `Authorization: Bearer` 토큰의 로그인 세션을 서버 전용 키로 취소. 토큰이 없으면 401 |
+
+- 화면은 서버가 돌려준 세션을 이 브라우저의 `localStorage`에 보관하고(비밀번호는 보관하지 않음), 만료 1분 전이면 `/api/auth/refresh`로 갱신한 뒤 자료를 요청합니다.
+- **Vercel 환경변수에 `SUPABASE_PUBLISHABLE_KEY`가 필요합니다.** 로그인 도구용 공개 키이며, 기존 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`와 같은 곳에 둡니다. 없으면 로그인이 "서버의 로그인 설정이 아직 없습니다"로 실패하고, 환경변수를 바꾼 뒤에는 다시 배포해야 반영됩니다.
 - 서버 함수의 로그인 검사, 소유자 검사, 서버 전용 설정(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)은 그대로입니다.
 - DB: 학습 DB의 `public.memos`에서 `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다(`docs/MEMOS_REVOKE.sql`). 서버 전용 키가 쓰는 `service_role`은 그대로이고, RLS와 소유자 정책 네 개도 그대로 남겼습니다. 4단계에서 `authenticated`에 주었던 직접 접근은 이제 닫혀 있고, 메모는 서버 함수를 통해서만 읽고 쓸 수 있습니다.
 - `aleph.config.json`의 `originalApiUrl`은 쿼리 없는 원본 자료 HTTPS 경로 `https://vfsfpmggzswszqljxznx.supabase.co/rest/v1/memos`입니다(메모 테이블을 DB에서 직접 읽는 주소). 공개 키로 이 주소에 직접 요청하면 거부되어야 하고, 심판이 공개 키로 확인합니다.
-- 배포되는 `/aleph.json`에도 `originalApiUrl`이 실립니다. 빌드(`scripts/deployment-identity.mjs`)가 5단계부터 `aleph.config.json`의 `originalApiUrl`을 검사해서 `aleph.json`에 넣고, 없거나 http이거나 쿼리·비밀번호·조각이 붙어 있으면 빌드가 실패합니다. 심판은 설정 파일이 아니라 이 배포 파일을 읽습니다(5단계 저장점 직후 심판이 `S05_ORIGINAL_URL_MISSING`으로 알려 와서 고쳤습니다).
+- 배포되는 `/aleph.json`에도 `allowedRoutes`(3단계부터, `"METHOD /경로"` 꼴이 하나 이상)와 `originalApiUrl`(5단계부터)이 실립니다. 빌드(`scripts/deployment-identity.mjs`)가 `aleph.config.json`의 두 값을 검사해서 `aleph.json`에 넣고, 없거나 형식이 틀리면(`allowedRoutes`가 비었거나 쿼리·중복이 있을 때, `originalApiUrl`이 http이거나 쿼리·비밀번호·조각이 붙어 있을 때) 빌드가 실패합니다. 첫 화면 응답의 보안 머리글(`X-Content-Type-Options: nosniff`)은 `vercel.json`이 이미 붙이고 있었고 배포에서 확인했습니다. 심판은 설정 파일이 아니라 이 배포 파일을 읽습니다(5단계 저장점 직후 심판이 `S05_ORIGINAL_URL_MISSING`으로 알려 와서 고쳤습니다).
 
 ### 알려진 약점
 
@@ -197,7 +207,7 @@
 
 - 저장점: 5단계 「자료 요청을 서버 한곳으로 모읍니다」.
 - 지금 작동하는 기능
-  1. 화면은 자료를 서버 함수로만 요청하고, Supabase는 로그인에만 씁니다.
+  1. 화면은 키 없이 서버 함수로만 로그인하고 자료를 요청합니다(저장점 이후 수정, 위 「5단계 현재 상태」 참고).
   2. 서버 함수는 로그인 토큰과 소유자를 검사한 뒤 서버 전용 키로 DB를 읽고 씁니다. A는 자기 메모를 읽고 추가·수정·삭제합니다.
   3. `public.memos`의 직접 권한은 `PUBLIC`·`anon`·`authenticated` 모두 없고, `service_role`만 있습니다.
   4. 공개 키로 원본 자료 API(`/rest/v1/memos`)에 직접 요청하면 401(permission denied, 42501)입니다.
@@ -212,7 +222,7 @@
   - `step`을 5로 올렸습니다. `scripts/deployment-identity.mjs`는 1~12를 허용해서 바꾸지 않았습니다.
   - `originalApiUrl`은 위 주소이고, `scripts/bundle.mjs`가 5단계부터 요구하는 HTTPS 주소 조건을 충족합니다.
   - `identityProvider`와 `allowedRoutes`는 4단계와 같고 구현과 일치합니다. `restoreRoute`는 null이며 저장소 안에 이 값을 설명하는 곳이 없어서 바꾸지 않았습니다. `judgeIssuer`도 바꾸지 않았습니다.
-  - `src/attack-check.mjs`는 5단계 점검 11건(4단계 10건 + 토큰 없이 공개 키만으로 원본 자료 API에 직접 요청)입니다. 전부 상태 코드만 기록합니다.
+  - `src/attack-check.mjs`는 5단계 점검 13건(4단계 10건 + 토큰 없이 공개 키만으로 원본 자료 API에 직접 요청 + 첫 화면의 보안 머리글 + 첫 화면 코드에 키 없음)입니다. 전부 상태 코드와 있음·없음만 기록합니다. 저장점 때는 11건이었고, 심판 점검에 맞춰 2건을 더했습니다.
   - `src/decider.mjs`의 `RULE_IDS`는 시작 틀의 `starter.deny` 하나뿐입니다. 6단계 이후에 구현합니다.
 - 확인한 것과 하지 않은 것
   - 가짜 DB·가짜 토큰으로 A의 읽기·추가·수정·삭제 흐름과 무로그인 401을 시험했고 통과했습니다(임시 시험 파일은 저장소에 두지 않았습니다).

@@ -73,6 +73,16 @@ export async function runAttackChecks(config) {
     observed: visible ? '비로그인 요청에서 공개 가상 메모 확인 표시가 보임'
       : `확인 표시가 보이지 않음 (HTTP ${data.status})` });
 
+  // 5단계: 첫 화면 응답에 보안 헤더가 있고, 화면 코드에 Supabase 공개 키가 없어야 합니다.
+  const home = await send('/');
+  const homeCode = await home.text();
+  const nosniff = home.headers.get('x-content-type-options')?.toLowerCase() === 'nosniff';
+  const hasCsp = Boolean(home.headers.get('content-security-policy'));
+  attempts.push({ attackId: 'home_security_header', expected: '첫 화면 응답에 X-Content-Type-Options: nosniff(또는 CSP) 머리글이 있음',
+    observed: `HTTP ${home.status}, ${nosniff || hasCsp ? '보안 머리글이 있음' : '보안 머리글이 없음'}` });
+  attempts.push({ attackId: 'home_code_has_no_key', expected: '첫 화면 코드에 Supabase 공개 키(sb_publishable_·anon 키)가 없음',
+    observed: `HTTP ${home.status}, ${/sb_publishable_|eyJ[A-Za-z0-9_-]{10,}\.eyJ/u.test(homeCode) ? '키로 보이는 문자열이 있음' : '키로 보이는 문자열이 보이지 않음'}` });
+
   const anonymous = [
     ['anonymous_notes_read', '로그인 없이 가상 메모 API를 읽으면 401', '/api/notes', {}],
     ['anonymous_memo_list', '로그인 없이 메모 목록을 읽으면 401', '/api/memos', {}],

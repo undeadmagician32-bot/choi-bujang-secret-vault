@@ -79,10 +79,8 @@ li span { color: #bfd0e5; }
 <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
 </main>
 <script type="module">
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
-// Project URL과 publishable key는 공개용 값입니다. 비밀 키는 넣지 않습니다.
-const SUPABASE_URL = 'https://vfsfpmggzswszqljxznx.supabase.co';
-const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
+// 화면 코드에는 키가 없습니다. 로그인·세션 갱신·로그아웃은 서버 함수(/api/auth/*)가 맡고,
+// 자료는 서버 함수(/api/notes, /api/memos)로만 요청합니다.
 const signedOut = document.querySelector('#signed-out');
 const signedIn = document.querySelector('#signed-in');
 const who = document.querySelector('#who');
@@ -96,6 +94,55 @@ const showNotesMessage = message => {
   item.textContent = message;
   list.replaceChildren(item);
 };
+// 로그인 세션: 서버가 돌려준 토큰을 이 브라우저에 보관합니다. 비밀번호는 보관하지 않습니다.
+const SESSION_KEY = 'vault-session';
+let authSession = null;
+let refreshing = null;
+const readStored = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_KEY));
+    return stored && typeof stored.access_token === 'string' && typeof stored.refresh_token === 'string'
+      && Number.isFinite(stored.expires_at) ? stored : null;
+  } catch { return null; }
+};
+const writeStored = stored => {
+  try {
+    if (stored) localStorage.setItem(SESSION_KEY, JSON.stringify(stored));
+    else localStorage.removeItem(SESSION_KEY);
+  } catch { /* 저장소를 쓸 수 없으면 이 탭에서만 유지됩니다 */ }
+};
+const authPost = async (path, body, token) => {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(path, {
+    method: 'POST', cache: 'no-store', headers, body: JSON.stringify(body ?? {}),
+  });
+  let data = null;
+  try { data = await response.json(); } catch { /* 본문 없음 */ }
+  return { response, data };
+};
+const setSession = next => { authSession = next; writeStored(next); render(next); };
+const refreshSession = () => {
+  if (!authSession) return Promise.resolve(null);
+  refreshing ??= (async () => {
+    try {
+      const { response, data } = await authPost('/api/auth/refresh', { refresh_token: authSession.refresh_token });
+      if (!response.ok) { setSession(null); return null; }
+      setSession(data);
+      return data;
+    } catch { return null; } finally { refreshing = null; }
+  })();
+  return refreshing;
+};
+// 만료 1분 전이면 먼저 갱신해서, 서버에 보낼 토큰은 항상 쓸 수 있는 것으로 돌려줍니다.
+const freshToken = async () => {
+  if (!authSession) throw new Error('로그인이 필요합니다.');
+  if (authSession.expires_at * 1000 - Date.now() < 60000) {
+    const next = await refreshSession();
+    if (!next) throw new Error('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+  return authSession.access_token;
+};
 // 로그인 토큰을 Authorization 머리글로 보냅니다. userId·role 같은 값은 보내지 않습니다.
 // 자료를 보여 줄지는 서버(api/notes.js)가 토큰을 검사해서 정합니다.
 let notesRequest = 0;
@@ -107,9 +154,10 @@ const loadNotes = async session => {
   }
   showNotesMessage('가상 자료를 불러오는 중입니다.');
   try {
+    const token = await freshToken();
     const response = await fetch('/api/notes', {
       cache: 'no-store',
-      headers: { Authorization: `Bearer ${session.access_token}` },
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (mine !== notesRequest) return;
     if (response.status === 401) throw new Error('로그인이 확인되지 않아 자료를 보여 줄 수 없습니다.');
@@ -143,8 +191,7 @@ let currentSession = null;
 let editingId = null;
 const showMemoError = message => { memoError.textContent = message || ''; memoError.hidden = !message; };
 const memoApi = async (path, { method = 'GET', body } = {}) => {
-  if (!currentSession) throw new Error('로그인이 필요합니다.');
-  const headers = { Authorization: `Bearer ${currentSession.access_token}` };
+  const headers = { Authorization: `Bearer ${await freshToken()}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const response = await fetch(path, {
     method, cache: 'no-store', headers, body: body === undefined ? undefined : JSON.stringify(body),
@@ -246,10 +293,9 @@ const renderMemos = session => {
 };
 let shownToken = null;
 const render = session => {
-  const user = session?.user;
-  signedOut.hidden = Boolean(user);
-  signedIn.hidden = !user;
-  who.textContent = user?.email ?? '';
+  signedOut.hidden = Boolean(session);
+  signedIn.hidden = !session;
+  who.textContent = session?.email ?? '';
   const token = session?.access_token ?? null;
   if (token !== shownToken) {
     const wasUser = Boolean(shownToken);
@@ -261,35 +307,43 @@ const render = session => {
   }
 };
 showNotesMessage('로그인하면 가상 자료가 보입니다.');
-render(null);
-let supabase;
-try {
-  supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-} catch (error) {
-  showError(`로그인 도구를 불러오지 못했습니다: ${error.message}`);
-}
-if (supabase) {
-  supabase.auth.onAuthStateChange((_event, session) => render(session));
-  const { data } = await supabase.auth.getSession();
-  render(data.session);
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
-    showError('');
-    loginButton.disabled = true;
-    const { error } = await supabase.auth.signInWithPassword({
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  showError('');
+  loginButton.disabled = true;
+  try {
+    const { response, data } = await authPost('/api/auth/login', {
       email: form.email.value.trim(),
       password: form.password.value,
     });
+    if (response.ok) {
+      setSession(data);
+    } else {
+      const reason = data?.message
+        ?? (data?.error === 'AUTH_NOT_CONFIGURED' ? '서버의 로그인 설정이 아직 없습니다.' : `오류 ${response.status}`);
+      showError(`로그인하지 못했습니다: ${reason}`);
+    }
+  } catch {
+    showError('로그인하지 못했습니다: 서버에 연결하지 못했습니다.');
+  } finally {
     loginButton.disabled = false;
     form.password.value = '';
-    if (error) showError(`로그인하지 못했습니다: ${error.message}`);
-  });
-  document.querySelector('#logout-button').addEventListener('click', async () => {
-    showError('');
-    const { error } = await supabase.auth.signOut();
-    if (error) showError(`로그아웃하지 못했습니다: ${error.message}`);
-  });
-}
+  }
+});
+document.querySelector('#logout-button').addEventListener('click', async () => {
+  showError('');
+  const token = authSession?.access_token;
+  setSession(null);
+  if (!token) return;
+  try {
+    const { response } = await authPost('/api/auth/logout', {}, token);
+    if (!response.ok) showError('이 브라우저에서는 로그아웃했지만, 서버에서 로그인 세션을 취소하지 못했습니다.');
+  } catch {
+    showError('이 브라우저에서는 로그아웃했지만, 서버에서 로그인 세션을 취소하지 못했습니다.');
+  }
+});
+authSession = readStored();
+render(authSession);
 </script>
 </body>
 </html>

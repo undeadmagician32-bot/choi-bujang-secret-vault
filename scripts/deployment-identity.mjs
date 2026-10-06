@@ -12,6 +12,16 @@ function originalApiUrl(config) {
   return url.href;
 }
 
+// 3단계부터 aleph.json에 허용 경로("METHOD /경로")를 싣습니다. 쿼리와 비밀값은 허용하지 않습니다.
+const ROUTE = /^(GET|POST|PUT|PATCH|DELETE) \/[A-Za-z0-9._~:/-]{0,200}$/u;
+function allowedRoutes(config) {
+  const routes = config.allowedRoutes;
+  if (!Array.isArray(routes) || routes.length < 1 || routes.length > 50
+      || routes.some((route) => typeof route !== 'string' || !ROUTE.test(route))
+      || new Set(routes).size !== routes.length) return null;
+  return [...routes];
+}
+
 export function deploymentIdentity(env, config) {
   const owner = env.VERCEL_GIT_REPO_OWNER;
   const repo = env.VERCEL_GIT_REPO_SLUG;
@@ -37,6 +47,13 @@ export function deploymentIdentity(env, config) {
     judgeIssuer: config.judgeIssuer,
     sampleMarker: config.sampleMarker,
   };
+  if (config.step >= 3) {
+    const routes = allowedRoutes(config);
+    if (!routes) {
+      throw new Error('3단계부터 aleph.config.json의 allowedRoutes에 "METHOD /경로" 꼴의 허용 경로가 하나 이상 필요합니다.');
+    }
+    identity.allowedRoutes = routes;
+  }
   if (config.step >= 5) {
     const original = originalApiUrl(config);
     if (!original) {
