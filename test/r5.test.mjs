@@ -4,7 +4,7 @@ import { deploymentIdentity } from '../scripts/deployment-identity.mjs';
 import { runAttackChecks } from '../src/attack-check.mjs';
 
 const config = {
-  step: 3,
+  step: 4,
   judgeIssuer: 'https://aleph-judge-production.up.railway.app/defense/judge',
   sampleMarker: 'SAMPLE_NOTE_1',
   publicAppUrl: 'https://student-defense.vercel.app',
@@ -25,7 +25,7 @@ const env = {
 test('build identity uses Vercel Git and deployment metadata', () => {
   assert.deepEqual(deploymentIdentity(env, config), {
     schema: 'aleph.defense.deployment.v1',
-    step: 3,
+    step: 4,
     repoUrl: 'https://github.com/student-a/aleph-defense',
     commit: 'a'.repeat(40),
     publicAppUrl: 'https://student-defense-123.vercel.app',
@@ -39,7 +39,7 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   assert.throws(() => deploymentIdentity(env, { ...config, step: '3' }));
 });
 
-test('step 3 attack checks send unauthenticated and forged requests and record only statuses', async () => {
+test('step 4 attack checks send unauthenticated and forged requests and record only statuses', async () => {
   const originalFetch = globalThis.fetch;
   const seen = [];
   try {
@@ -51,7 +51,7 @@ test('step 3 attack checks send unauthenticated and forged requests and record o
         { status: target.pathname === '/data.json' ? 404 : 401 });
     };
     const results = await runAttackChecks(config);
-    assert.equal(results.length, 8);
+    assert.equal(results.length, 10);
     assert.equal(new Set(results.map((item) => item.attackId)).size, results.length);
     for (const result of results) {
       assert.deepEqual(Object.keys(result).sort(), ['attackId', 'expected', 'observed']);
@@ -62,11 +62,14 @@ test('step 3 attack checks send unauthenticated and forged requests and record o
     assert.ok(seen.every((req) => req.redirect === 'error'));
     const post = seen.find((req) => req.method === 'POST');
     assert.equal(post.body, '{}');
-    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'PUT']);
+    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'PUT', 'PUT']);
+    assert.ok(seen.some((req) => req.path === '/api/memos/b0b0b0b0-0000-4000-8000-000000000001' && req.method === 'GET'));
+    const ownerChange = seen.find((req) => req.method === 'PUT' && String(req.body).includes('owner_id'));
+    assert.ok(ownerChange && !ownerChange.headers.Authorization);
     const bearer = seen.filter((req) => req.headers.Authorization);
     assert.equal(bearer.length, 2);
     for (const req of bearer) assert.match(req.headers.Authorization, /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/u);
-    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 6);
+    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 8);
 
     // 보호가 뚫리면 그대로 기록해야 합니다.
     globalThis.fetch = async () => new Response('[]', { status: 200 });

@@ -107,13 +107,13 @@
 
 - `aleph.config.json`: `step` 3, `identityProvider`(Supabase 발급자 `…/auth/v1`, 대상 `authenticated`, 공개키 주소 `…/.well-known/jwks.json`, 비밀 키 없음), `allowedRoutes`에 위 다섯 경로를 `"METHOD /경로"` 꼴로 적었습니다. `originalApiUrl`과 `restoreRoute`는 5단계 이후 항목이라 null입니다.
 
-### 알려진 약점 (4단계에서 고칠 예정)
+### 3단계 당시의 약점 (소유자 검사는 4단계에서 해결, 아래 「4단계 현재 상태」 참고)
 
-- **소유자 검사가 없습니다.** `GET`·`PUT`·`DELETE /api/memos/:id`는 로그인만 확인하고 `owner_id`를 비교하지 않습니다. 로그인한 B가 A의 메모 id를 알면 읽고 고치고 지울 수 있습니다. 목록 `GET /api/memos`는 로그인한 사용자 것만 돌려줍니다. 가짜 DB 시험에서 B가 A의 메모를 읽기 200, 수정 200으로 확인했습니다. 진짜 계정 두 개로는 시험하지 않았습니다(미실행).
-- 허용 경로 검사(`allowedRoutes`는 기록일 뿐 서버가 강제하지 않음)와 호출 횟수 제한이 없습니다.
+- 3단계 당시 `GET`·`PUT`·`DELETE /api/memos/:id`는 로그인만 확인하고 `owner_id`를 비교하지 않아서, 로그인한 B가 A의 메모 id를 알면 읽고 고치고 지울 수 있었습니다(가짜 DB 시험에서 읽기 200, 수정 200 확인). 4단계에서 고쳤습니다.
+- 허용 경로 검사(`allowedRoutes`는 기록일 뿐 서버가 강제하지 않음)와 호출 횟수 제한은 여전히 없습니다.
 - 옛 커밋과 옛 배포의 `/data.json` 노출은 여전히 해소되지 않았습니다(위 「옛 노출」).
 
-## 3단계 저장점
+## 3단계 저장점 (당시 기록)
 
 - 저장점: 3단계 「진짜 로그인을 붙입니다」.
 - 지금 작동하는 기능
@@ -135,6 +135,48 @@
 - 아직 하지 않은 것
   - B 계정으로 A의 메모에 접근하는 점검은 하지 않았습니다(미실행, 4단계에서 기록).
   - 실제 Supabase와 두 계정으로 한 시험은 A 한 계정의 화면 동작뿐입니다.
+
+## 4단계 현재 상태: 로그인해도 내 자료만 보이게
+
+- 서버가 토큰으로 확인한 사용자 ID와 DB의 `owner_id`가 같은 행만 다룹니다. URL이나 본문의 `owner_id`는 믿지 않습니다.
+- `GET`·`PUT`·`DELETE /api/memos/:id`는 비교를 DB 쿼리 안(`id`와 `owner_id` 조건)에서 한 번에 합니다. 남의 메모와 없는 메모는 같은 404 `NOT_FOUND`로 답해서 메모가 있는지조차 알려 주지 않습니다. 한 건 GET 응답은 `{id, title, body}`이고 수정 본문은 `{title, body}`입니다.
+- `PUT`은 기존 행의 소유자가 본인일 때만 고쳐지고, 새 행의 `owner_id`도 확인된 사용자 ID로 고정합니다. 본문에 본인이 아닌 `owner_id`가 있으면 소유자 변경 시도로 보고 403 `OWNER_CHANGE_FORBIDDEN`으로 거부합니다.
+- `POST`는 본문의 `owner_id`를 무시하고 확인된 사용자 ID로 저장합니다. 목록 `GET /api/memos`는 로그인한 사용자 것만 돌려줍니다. `allowedRoutes`는 3단계와 같은 다섯 경로이며 실제 메서드·경로와 일치합니다.
+- DB: 학습 DB의 `public.memos`에서 기존 메모 세 건을 A 소유로 연결하고 B 소유의 시험 메모 한 건을 만들었습니다(이메일로 `auth.users`에서 ID를 찾는 일회성 SQL이라 저장소에 올리지 않았습니다). 이어서 `docs/MEMOS_RLS.sql`을 적용했습니다. `PUBLIC`·`anon`·`authenticated`의 권한을 모두 회수하고 RLS를 켠 뒤, `authenticated`에만 SELECT·INSERT·UPDATE·DELETE를 주었고, 정책 네 개는 모두 `auth.uid() = owner_id`일 때만 허용합니다(SELECT·DELETE는 기존 행 USING, INSERT는 새 행 WITH CHECK, UPDATE는 둘 다).
+- 앱 API는 서버 전용 키로 DB에 접근해서 RLS를 건너뜁니다. 그래서 앱에서 상대 행이 거부되는 것은 위 코드의 소유자 검사 덕분이고, RLS와 권한은 공개 키와 로그인 토큰으로 DB에 직접 접근하는 경우를 막는 두 번째 방어선입니다. 같은 이유로 `authenticated`에 권한을 준 만큼, 로그인한 사용자가 자기 행에 한해 DB에 직접 접근할 수 있게 열렸습니다.
+
+### 알려진 약점
+
+- 허용 경로 검사(`allowedRoutes`는 기록일 뿐 서버가 강제하지 않음)와 호출 횟수 제한이 없습니다.
+- 남의 메모 id로 `POST`하면 409 `ID_EXISTS`가 돌아와서, 그 id가 이미 있다는 사실(내용은 아님)이 드러납니다.
+- 옛 커밋과 옛 배포의 `/data.json` 노출은 여전히 해소되지 않았습니다(위 「옛 노출」).
+
+## 4단계 저장점
+
+- 저장점: 4단계 「로그인해도 내 자료만 보이게 합니다」. 소유자 검사 코드는 커밋 `f5dd12e`에 있습니다.
+- 지금 작동하는 기능
+  1. 로그인한 A와 B는 각자 자기 메모를 읽고 추가·수정·삭제합니다.
+  2. 상대 메모를 읽거나 고치거나 지우면 404이고, 본문으로 소유자를 바꾸려 하면 403입니다.
+  3. `owner_id`는 서버가 확인한 사용자 ID로만 저장합니다.
+  4. `public.memos`는 RLS와 최소 권한(authenticated에 4개 권한, 소유자 정책 4개)을 갖습니다.
+  5. 3단계 기능(로그인·로그아웃, `/api/notes`의 토큰 검사, 무로그인·위조 토큰 401)은 그대로입니다.
+- 다시 실행하는 방법
+  - 화면 파일만 만들 때: `npm run build -- --local`
+  - 시험: `npm run test:r5`, `npm run test:package`
+  - 배포 확인: A로 로그인하면 자기 메모만, B로 로그인하면 B의 메모만 보입니다. 로그인한 B가 A의 메모 id로 `/api/memos/<id>`를 요청하면 404여야 합니다.
+  - DB 권한 확인: `docs/MEMOS_RLS.sql`의 확인 쿼리(`role_table_grants`, `has_table_privilege`, `pg_policies`)를 하나씩 실행합니다.
+  - 제출 묶음: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 4로 올렸습니다. `scripts/deployment-identity.mjs`는 1~12를 허용해서 바꾸지 않았습니다.
+  - `identityProvider`와 `allowedRoutes`는 3단계와 같고 구현과 일치합니다. `originalApiUrl`과 `restoreRoute`는 5단계 이후 항목이라 null입니다. `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/attack-check.mjs`는 4단계 점검 10건(3단계 8건 + 로그인 없이 B의 시험 메모 id를 읽기, 본문에 `owner_id`를 넣어 고치기)입니다. 전부 로그인 없는 요청(또는 위조 토큰 요청)이라 401만 확인합니다.
+  - `src/decider.mjs`의 `RULE_IDS`는 시작 틀의 `starter.deny` 하나뿐입니다. 6단계 이후에 구현합니다.
+- 확인한 것과 하지 않은 것
+  - 가짜 DB·가짜 토큰으로 A/B의 소유자 검사 시험을 했고 모두 통과했습니다(임시 시험 파일은 저장소에 두지 않았습니다).
+  - 학생이 배포 뒤 A·B 계정으로 앱을 확인했다고 알려 왔습니다(제가 화면을 직접 보지는 못했습니다).
+  - `docs/MEMOS_RLS.sql` 적용 뒤 `role_table_grants`, `has_table_privilege`, `pg_policies` 결과를 캡처로 확인했습니다. `authenticated`는 4개 권한만 `true`이고 `anon`은 모두 `false`이며 정책은 네 개였습니다.
+  - RLS 동작 시험(역할을 바꿔 상대 행 접근을 확인하는 SQL)은 학생이 실행했다고 알려 왔지만 결과 표는 보지 못했습니다.
+  - **로그인한 A·B 토큰으로 상대 메모에 접근하는 점검은 `attack-check.mjs`에 넣지 못했습니다(미실행).** 토큰을 코드나 제출 묶음에 둘 수 없어서, 이 점검은 로그인 없이는 할 수 없는 부분만 기록합니다.
 
 ## 시작 틀의 자동 처리
 
