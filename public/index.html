@@ -16,6 +16,16 @@ ul { list-style: none; display: grid; gap: 12px; padding: 0; }
 li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
 strong { display: block; font-size: 18px; margin-bottom: 5px; }
 li span { color: #bfd0e5; }
+.auth { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+.auth h2 { margin: 0 0 12px; font-size: 18px; }
+.auth form { display: grid; gap: 10px; }
+.auth label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
+.auth input { padding: 10px 12px; border: 1px solid #51667c; border-radius: 10px; background: #101a28; color: #ecf4ff; font-size: 16px; }
+.auth button { padding: 10px 14px; border: 0; border-radius: 10px; background: #8ad8df; color: #101a28; font-size: 16px; font-weight: 700; cursor: pointer; }
+.auth button:disabled { opacity: .6; cursor: wait; }
+.auth .status { margin: 0 0 12px; color: #ecf4ff; }
+.auth .error { margin: 12px 0 0; color: #ffb4c0; font-size: 15px; }
+[hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -24,6 +34,21 @@ li span { color: #bfd0e5; }
 <h1>점령된 자료실</h1>
 <p>자료는 이제 코드 밖 보관함에 있고, 서버 함수가 읽어 옵니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
 <div class="notice">서버 함수 주소는 아직 로그인 없이 누구나 열 수 있어서, 로그인하지 않은 방문자도 자료를 볼 수 있습니다. 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
+<section class="auth" id="auth" aria-live="polite">
+<div id="signed-out" hidden>
+<h2>로그인</h2>
+<form id="login-form">
+<label>이메일<input id="email" type="email" autocomplete="email" required></label>
+<label>비밀번호<input id="password" type="password" autocomplete="current-password" required></label>
+<button type="submit" id="login-button">로그인</button>
+</form>
+</div>
+<div id="signed-in" hidden>
+<p class="status">로그인됨: <strong id="who"></strong></p>
+<button type="button" id="logout-button">로그아웃</button>
+</div>
+<p class="error" id="auth-error" role="alert" hidden></p>
+</section>
 <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
 </main>
 <script type="module">
@@ -46,6 +71,54 @@ try {
   const item = document.createElement('li');
   item.textContent = error.message;
   list.replaceChildren(item);
+}
+</script>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
+// Project URL과 publishable key는 공개용 값입니다. 비밀 키는 넣지 않습니다.
+const SUPABASE_URL = 'https://vfsfpmggzswszqljxznx.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
+const signedOut = document.querySelector('#signed-out');
+const signedIn = document.querySelector('#signed-in');
+const who = document.querySelector('#who');
+const errorBox = document.querySelector('#auth-error');
+const form = document.querySelector('#login-form');
+const loginButton = document.querySelector('#login-button');
+const showError = message => { errorBox.textContent = message || ''; errorBox.hidden = !message; };
+const render = session => {
+  const user = session?.user;
+  signedOut.hidden = Boolean(user);
+  signedIn.hidden = !user;
+  who.textContent = user?.email ?? '';
+};
+render(null);
+let supabase;
+try {
+  supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+} catch (error) {
+  showError(`로그인 도구를 불러오지 못했습니다: ${error.message}`);
+}
+if (supabase) {
+  supabase.auth.onAuthStateChange((_event, session) => render(session));
+  const { data } = await supabase.auth.getSession();
+  render(data.session);
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    showError('');
+    loginButton.disabled = true;
+    const { error } = await supabase.auth.signInWithPassword({
+      email: form.email.value.trim(),
+      password: form.password.value,
+    });
+    loginButton.disabled = false;
+    form.password.value = '';
+    if (error) showError(`로그인하지 못했습니다: ${error.message}`);
+  });
+  document.querySelector('#logout-button').addEventListener('click', async () => {
+    showError('');
+    const { error } = await supabase.auth.signOut();
+    if (error) showError(`로그아웃하지 못했습니다: ${error.message}`);
+  });
 }
 </script>
 </body>
