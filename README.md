@@ -68,11 +68,33 @@
 - 공개(anon) 키로 읽는 요청이 거부되는지는 직접 시험하지 않았습니다. 권한을 모두 회수하는 SQL의 확인 결과가 근거이고, 실제 판정은 심판이 확인합니다.
 - 접근 제어는 3단계 이후에 추가합니다.
 
+## 2단계 저장점
+
+- 저장점: 2단계 「자료를 코드 밖으로 옮깁니다」. 기준 커밋은 `5df3bb8`(이 저장점 커밋 직전)입니다.
+- 지금 작동하는 기능
+  1. 화면(`/`)이 `/api/notes`를 호출해 가상 메모 카드 네 개를 그립니다.
+  2. 서버 함수 `api/notes.js`가 서버 전용 환경변수로 Supabase 테이블 `archive_notes`에서 `title`과 `content`만 읽어 돌려줍니다.
+  3. 현재 배포에서 `/data.json`은 404이고, `public/aleph.json`은 빌드가 생성합니다.
+  4. 테이블은 RLS를 켜고 `anon`·`authenticated` 권한을 모두 회수했습니다(SQL 확인 결과 기준).
+  5. 접근 제어는 아직 없습니다. 위 「알려진 약점」과 「공개 API의 남은 약점」을 보세요.
+- 다시 실행하는 방법
+  - 화면 파일만 만들 때: `npm run build -- --local` (배포나 심판 접수를 증명하지 않습니다)
+  - 시험: `npm run test:r5`, `npm run test:package`
+  - 배포 확인: 시크릿 창에서 `/`, `/data.json`, `/api/notes`, `/aleph.json`을 엽니다. 메모 문장 검색은 「가상 메모 문장 검색 확인」을 따릅니다.
+  - 제출 묶음: 내 컴퓨터에 clone한 저장소에서 `bundle-notes.json`에 이번 단계에서 한 일을 세 줄로 적은 뒤 `npm run bundle`을 실행합니다. `bundle-notes.json`과 `artifacts/submission.json`은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `repoUrl`과 `publicAppUrl`은 자리표시자를 실제 저장소 주소와 실제 배포 주소로 바꿨습니다.
+  - `step`은 1로 둡니다. `scripts/deployment-identity.mjs`가 1만 허용하고 `src/attack-check.mjs`가 1단계 점검만 구현하고 있어서, 2단계 점검을 구현할 때 함께 바꿉니다.
+  - `identityProvider`는 null, `allowedRoutes`는 빈 배열, `originalApiUrl`과 `restoreRoute`는 null입니다. 3단계 이후 항목이라 비워 둡니다. `judgeIssuer`는 바꾸지 않았습니다.
+- 아직 하지 않은 것
+  - `npm run bundle`은 이 저장점을 만들 때 실행하지 않았습니다(미실행).
+  - `src/attack-check.mjs`는 1단계 점검 그대로라서 `/data.json`만 요청합니다. 2단계 점검(`/api/notes` 등)은 구현하지 않았습니다.
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포합니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.
 
-`aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 이전 제출 묶음 방식의 자리표시자입니다. 1단계에서는 학생이 편집하지 않습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
+`aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 이전 제출 묶음 방식의 자리표시자입니다. 1단계에서는 학생이 편집하지 않습니다. 2단계 저장점에서는 실제 주소로 채웠습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
 
 로컬에서 가상 화면만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 실제 배포가 된 뒤 `/data.json`을 비로그인으로 요청해 공개 가상 메모의 확인 표시를 읽습니다. (2단계 이후에는 `/data.json`이 없어서, 이 점검은 아직 갱신하지 않았습니다.)
 
