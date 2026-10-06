@@ -4,10 +4,15 @@ import { deploymentIdentity } from '../scripts/deployment-identity.mjs';
 import { runAttackChecks } from '../src/attack-check.mjs';
 
 const config = {
-  step: 1,
+  step: 3,
   judgeIssuer: 'https://aleph-judge-production.up.railway.app/defense/judge',
   sampleMarker: 'SAMPLE_NOTE_1',
   publicAppUrl: 'https://student-defense.vercel.app',
+  identityProvider: {
+    issuer: 'https://project-ref.supabase.co/auth/v1',
+    audience: 'authenticated',
+    jwksUrl: 'https://project-ref.supabase.co/auth/v1/.well-known/jwks.json',
+  },
 };
 const env = {
   VERCEL_GIT_PROVIDER: 'github',
@@ -20,7 +25,7 @@ const env = {
 test('build identity uses Vercel Git and deployment metadata', () => {
   assert.deepEqual(deploymentIdentity(env, config), {
     schema: 'aleph.defense.deployment.v1',
-    step: 1,
+    step: 3,
     repoUrl: 'https://github.com/student-a/aleph-defense',
     commit: 'a'.repeat(40),
     publicAppUrl: 'https://student-defense-123.vercel.app',
@@ -29,28 +34,45 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   });
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_PROVIDER: undefined }, config));
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
+  assert.throws(() => deploymentIdentity(env, { ...config, step: 0 }));
+  assert.throws(() => deploymentIdentity(env, { ...config, step: 13 }));
+  assert.throws(() => deploymentIdentity(env, { ...config, step: '3' }));
 });
 
-test('first attack check reads public data.json without credentials', async () => {
+test('step 3 attack checks send unauthenticated and forged requests and record only statuses', async () => {
   const originalFetch = globalThis.fetch;
-  let requestUrl;
-  let options;
+  const seen = [];
   try {
-    globalThis.fetch = async (url, init) => {
-      requestUrl = String(url);
-      options = init;
-      return new Response(JSON.stringify({ sampleMarker: 'SAMPLE_NOTE_1', notes: [{ title: '가상' }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+    globalThis.fetch = async (url, init = {}) => {
+      const target = new URL(String(url));
+      seen.push({ path: target.pathname, method: init.method ?? 'GET', headers: init.headers ?? {},
+        body: init.body, redirect: init.redirect });
+      return new Response(target.pathname === '/data.json' ? 'not found' : '{"error":"LOGIN_REQUIRED"}',
+        { status: target.pathname === '/data.json' ? 404 : 401 });
     };
-    const [result] = await runAttackChecks(config);
-    assert.equal(requestUrl, 'https://student-defense.vercel.app/data.json');
-    assert.equal(options.redirect, 'error');
-    assert.match(result.observed, /확인 표시가 보임/u);
-    globalThis.fetch = async () => new Response('<html>not the data</html>', { status: 200 });
-    const [failed] = await runAttackChecks(config);
-    assert.match(failed.observed, /보이지 않음/u);
+    const results = await runAttackChecks(config);
+    assert.equal(results.length, 8);
+    assert.equal(new Set(results.map((item) => item.attackId)).size, results.length);
+    for (const result of results) {
+      assert.deepEqual(Object.keys(result).sort(), ['attackId', 'expected', 'observed']);
+      assert.doesNotMatch(result.observed, /eyJ|Bearer|notes|title/u);
+    }
+    assert.match(results[0].observed, /확인 표시가 보이지 않음 \(HTTP 404\)/u);
+    assert.ok(results.slice(1).every((item) => /HTTP 401, 자료 없이 거부됨/u.test(item.observed)));
+    assert.ok(seen.every((req) => req.redirect === 'error'));
+    const post = seen.find((req) => req.method === 'POST');
+    assert.equal(post.body, '{}');
+    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'PUT']);
+    const bearer = seen.filter((req) => req.headers.Authorization);
+    assert.equal(bearer.length, 2);
+    for (const req of bearer) assert.match(req.headers.Authorization, /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/u);
+    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 6);
+
+    // 보호가 뚫리면 그대로 기록해야 합니다.
+    globalThis.fetch = async () => new Response('[]', { status: 200 });
+    const open = await runAttackChecks(config);
+    assert.ok(open.slice(1).every((item) => /거부되지 않음/u.test(item.observed)));
+    await assert.rejects(() => runAttackChecks({ ...config, step: 1 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
