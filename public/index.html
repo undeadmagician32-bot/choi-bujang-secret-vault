@@ -33,7 +33,7 @@ li span { color: #bfd0e5; }
 <div class="eyebrow">BYTE BACK · 2단계 자료 이동</div>
 <h1>점령된 자료실</h1>
 <p>자료는 이제 코드 밖 보관함에 있고, 서버 함수가 읽어 옵니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
-<div class="notice">서버 함수 주소는 아직 로그인 없이 누구나 열 수 있어서, 로그인하지 않은 방문자도 자료를 볼 수 있습니다. 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
+<div class="notice">자료 주소는 이제 서버가 로그인 토큰을 검사합니다. 로그인하지 않으면 자료가 보이지 않습니다. 허용 경로와 호출 횟수 제한은 아직 없습니다.</div>
 <section class="auth" id="auth" aria-live="polite">
 <div id="signed-out" hidden>
 <h2>로그인</h2>
@@ -52,28 +52,6 @@ li span { color: #bfd0e5; }
 <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
 </main>
 <script type="module">
-const list = document.querySelector('#notes');
-try {
-  const response = await fetch('/api/notes', { cache: 'no-store' });
-  if (!response.ok) throw new Error('자료를 읽을 수 없습니다.');
-  const data = await response.json();
-  if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-  list.replaceChildren(...data.notes.map(note => {
-    const item = document.createElement('li');
-    const title = document.createElement('strong');
-    const content = document.createElement('span');
-    title.textContent = note.title;
-    content.textContent = note.content;
-    item.append(title, content);
-    return item;
-  }));
-} catch (error) {
-  const item = document.createElement('li');
-  item.textContent = error.message;
-  list.replaceChildren(item);
-}
-</script>
-<script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
 // Project URL과 publishable key는 공개용 값입니다. 비밀 키는 넣지 않습니다.
 const SUPABASE_URL = 'https://vfsfpmggzswszqljxznx.supabase.co';
@@ -85,12 +63,59 @@ const errorBox = document.querySelector('#auth-error');
 const form = document.querySelector('#login-form');
 const loginButton = document.querySelector('#login-button');
 const showError = message => { errorBox.textContent = message || ''; errorBox.hidden = !message; };
+const list = document.querySelector('#notes');
+const showNotesMessage = message => {
+  const item = document.createElement('li');
+  item.textContent = message;
+  list.replaceChildren(item);
+};
+// 로그인 토큰을 Authorization 머리글로 보냅니다. userId·role 같은 값은 보내지 않습니다.
+// 자료를 보여 줄지는 서버(api/notes.js)가 토큰을 검사해서 정합니다.
+let notesRequest = 0;
+const loadNotes = async session => {
+  const mine = ++notesRequest;
+  if (!session) {
+    showNotesMessage('로그인하면 가상 자료가 보입니다.');
+    return;
+  }
+  showNotesMessage('가상 자료를 불러오는 중입니다.');
+  try {
+    const response = await fetch('/api/notes', {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (mine !== notesRequest) return;
+    if (response.status === 401) throw new Error('로그인이 확인되지 않아 자료를 보여 줄 수 없습니다.');
+    if (!response.ok) throw new Error('자료를 읽을 수 없습니다.');
+    const data = await response.json();
+    if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+    if (mine !== notesRequest) return;
+    list.replaceChildren(...data.notes.map(note => {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      const content = document.createElement('span');
+      title.textContent = note.title;
+      content.textContent = note.content;
+      item.append(title, content);
+      return item;
+    }));
+  } catch (error) {
+    if (mine === notesRequest) showNotesMessage(error.message);
+  }
+};
+let shownToken = null;
 const render = session => {
   const user = session?.user;
   signedOut.hidden = Boolean(user);
   signedIn.hidden = !user;
   who.textContent = user?.email ?? '';
+  const token = session?.access_token ?? null;
+  if (token !== shownToken) {
+    shownToken = token;
+    loadNotes(session);
+  }
 };
+showNotesMessage('로그인하면 가상 자료가 보입니다.');
 render(null);
 let supabase;
 try {
