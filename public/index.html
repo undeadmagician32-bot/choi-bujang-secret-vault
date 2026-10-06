@@ -25,6 +25,20 @@ li span { color: #bfd0e5; }
 .auth button:disabled { opacity: .6; cursor: wait; }
 .auth .status { margin: 0 0 12px; color: #ecf4ff; }
 .auth .error { margin: 12px 0 0; color: #ffb4c0; font-size: 15px; }
+.memos { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+.memos h2 { margin: 0 0 12px; font-size: 18px; }
+.memos form { display: grid; gap: 10px; margin-bottom: 14px; }
+.memos label { display: grid; gap: 4px; font-size: 14px; color: #bfd0e5; }
+.memos input, .memos textarea { padding: 10px 12px; border: 1px solid #51667c; border-radius: 10px; background: #101a28; color: #ecf4ff; font: inherit; font-size: 16px; }
+.memos textarea { min-height: 84px; resize: vertical; }
+.memos .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.memos button { padding: 8px 12px; border: 0; border-radius: 10px; background: #8ad8df; color: #101a28; font-size: 15px; font-weight: 700; cursor: pointer; }
+.memos button.secondary { background: #51667c; color: #ecf4ff; }
+.memos button.danger { background: #d07384; color: #101a28; }
+.memos button:disabled { opacity: .6; cursor: wait; }
+.memos ul { margin: 0; }
+.memos .error { margin: 0 0 12px; color: #ffb4c0; font-size: 15px; }
+.memos .empty { color: #bfd0e5; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -48,6 +62,19 @@ li span { color: #bfd0e5; }
 <button type="button" id="logout-button">로그아웃</button>
 </div>
 <p class="error" id="auth-error" role="alert" hidden></p>
+</section>
+<section class="memos" id="memos" hidden>
+<h2>내 메모</h2>
+<p class="error" id="memo-error" role="alert" hidden></p>
+<form id="memo-form">
+<label>제목<input id="memo-title" maxlength="200" required></label>
+<label>내용<textarea id="memo-body" maxlength="5000"></textarea></label>
+<div class="row">
+<button type="submit" id="memo-save">메모 추가</button>
+<button type="button" class="secondary" id="memo-cancel" hidden>수정 취소</button>
+</div>
+</form>
+<ul id="memo-list" aria-live="polite"></ul>
 </section>
 <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
 </main>
@@ -103,6 +130,120 @@ const loadNotes = async session => {
     if (mine === notesRequest) showNotesMessage(error.message);
   }
 };
+// 로그인한 사람의 메모 추가·수정·삭제. 서버가 토큰으로 사용자를 확인하고 owner_id를 정합니다.
+const memosBox = document.querySelector('#memos');
+const memoForm = document.querySelector('#memo-form');
+const memoTitle = document.querySelector('#memo-title');
+const memoBody = document.querySelector('#memo-body');
+const memoSave = document.querySelector('#memo-save');
+const memoCancel = document.querySelector('#memo-cancel');
+const memoList = document.querySelector('#memo-list');
+const memoError = document.querySelector('#memo-error');
+let currentSession = null;
+let editingId = null;
+const showMemoError = message => { memoError.textContent = message || ''; memoError.hidden = !message; };
+const memoApi = async (path, { method = 'GET', body } = {}) => {
+  if (!currentSession) throw new Error('로그인이 필요합니다.');
+  const headers = { Authorization: `Bearer ${currentSession.access_token}` };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(path, {
+    method, cache: 'no-store', headers, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await response.json(); } catch { /* 본문 없음 */ }
+  if (!response.ok) {
+    const reasons = {
+      LOGIN_REQUIRED: '로그인이 확인되지 않았습니다.', NOT_FOUND: '메모를 찾을 수 없습니다.',
+      INVALID_MEMO: '제목은 1~200자, 내용은 5000자 이하로 적어 주세요.',
+      INVALID_ID: '메모 번호가 올바르지 않습니다.', ID_EXISTS: '이미 있는 메모 번호입니다.',
+    };
+    throw new Error(reasons[data?.error] ?? `요청이 거부되었습니다 (${response.status}).`);
+  }
+  return data;
+};
+const resetMemoForm = () => {
+  editingId = null;
+  memoForm.reset();
+  memoSave.textContent = '메모 추가';
+  memoCancel.hidden = true;
+};
+const loadMemos = async () => {
+  try {
+    const memos = await memoApi('/api/memos');
+    if (!Array.isArray(memos)) throw new Error('메모 형식이 맞지 않습니다.');
+    const items = memos.map(memo => {
+      const item = document.createElement('li');
+      const title = document.createElement('strong');
+      const body = document.createElement('span');
+      const row = document.createElement('div');
+      const edit = document.createElement('button');
+      const del = document.createElement('button');
+      title.textContent = memo.title;
+      body.textContent = memo.body;
+      row.className = 'row';
+      edit.type = 'button'; edit.className = 'secondary'; edit.textContent = '수정';
+      del.type = 'button'; del.className = 'danger'; del.textContent = '삭제';
+      edit.addEventListener('click', () => {
+        editingId = memo.id;
+        memoTitle.value = memo.title;
+        memoBody.value = memo.body;
+        memoSave.textContent = '수정 저장';
+        memoCancel.hidden = false;
+        memoTitle.focus();
+      });
+      del.addEventListener('click', async () => {
+        showMemoError('');
+        del.disabled = true;
+        try {
+          await memoApi(`/api/memos/${memo.id}`, { method: 'DELETE' });
+          if (editingId === memo.id) resetMemoForm();
+          await loadMemos();
+        } catch (error) {
+          del.disabled = false;
+          showMemoError(`삭제하지 못했습니다: ${error.message}`);
+        }
+      });
+      row.append(edit, del);
+      item.append(title, body, row);
+      return item;
+    });
+    if (!items.length) {
+      const empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = '아직 메모가 없습니다.';
+      items.push(empty);
+    }
+    memoList.replaceChildren(...items);
+  } catch (error) {
+    showMemoError(`메모를 불러오지 못했습니다: ${error.message}`);
+  }
+};
+memoForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  showMemoError('');
+  memoSave.disabled = true;
+  const wasEditing = editingId;
+  try {
+    const payload = { title: memoTitle.value, body: memoBody.value };
+    if (wasEditing) await memoApi(`/api/memos/${wasEditing}`, { method: 'PUT', body: payload });
+    else await memoApi('/api/memos', { method: 'POST', body: payload });
+    resetMemoForm();
+    await loadMemos();
+  } catch (error) {
+    showMemoError(`${wasEditing ? '수정' : '추가'}하지 못했습니다: ${error.message}`);
+  } finally {
+    memoSave.disabled = false;
+  }
+});
+memoCancel.addEventListener('click', () => { showMemoError(''); resetMemoForm(); });
+const renderMemos = session => {
+  currentSession = session;
+  memosBox.hidden = !session;
+  showMemoError('');
+  resetMemoForm();
+  memoList.replaceChildren();
+  if (session) loadMemos();
+};
 let shownToken = null;
 const render = session => {
   const user = session?.user;
@@ -111,8 +252,12 @@ const render = session => {
   who.textContent = user?.email ?? '';
   const token = session?.access_token ?? null;
   if (token !== shownToken) {
+    const wasUser = Boolean(shownToken);
     shownToken = token;
     loadNotes(session);
+    // 토큰만 갱신된 경우에는 입력 중인 내용을 지우지 않고 세션만 바꿉니다.
+    if (wasUser && session) currentSession = session;
+    else renderMemos(session);
   }
 };
 showNotesMessage('로그인하면 가상 자료가 보입니다.');
