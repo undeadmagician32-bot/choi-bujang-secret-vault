@@ -184,6 +184,7 @@
 - 서버 함수의 로그인 검사, 소유자 검사, 서버 전용 설정(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)은 그대로입니다.
 - DB: 학습 DB의 `public.memos`에서 `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다(`docs/MEMOS_REVOKE.sql`). 서버 전용 키가 쓰는 `service_role`은 그대로이고, RLS와 소유자 정책 네 개도 그대로 남겼습니다. 4단계에서 `authenticated`에 주었던 직접 접근은 이제 닫혀 있고, 메모는 서버 함수를 통해서만 읽고 쓸 수 있습니다.
 - `aleph.config.json`의 `originalApiUrl`은 쿼리 없는 원본 자료 HTTPS 경로 `https://vfsfpmggzswszqljxznx.supabase.co/rest/v1/memos`입니다(메모 테이블을 DB에서 직접 읽는 주소). 공개 키로 이 주소에 직접 요청하면 거부되어야 하고, 심판이 공개 키로 확인합니다.
+- 배포되는 `/aleph.json`에도 `originalApiUrl`이 실립니다. 빌드(`scripts/deployment-identity.mjs`)가 5단계부터 `aleph.config.json`의 `originalApiUrl`을 검사해서 `aleph.json`에 넣고, 없거나 http이거나 쿼리·비밀번호·조각이 붙어 있으면 빌드가 실패합니다. 심판은 설정 파일이 아니라 이 배포 파일을 읽습니다(5단계 저장점 직후 심판이 `S05_ORIGINAL_URL_MISSING`으로 알려 와서 고쳤습니다).
 
 ### 알려진 약점
 

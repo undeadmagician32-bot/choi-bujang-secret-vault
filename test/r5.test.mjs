@@ -32,7 +32,16 @@ test('build identity uses Vercel Git and deployment metadata', () => {
     publicAppUrl: 'https://student-defense-123.vercel.app',
     judgeIssuer: config.judgeIssuer,
     sampleMarker: config.sampleMarker,
+    originalApiUrl: 'https://project-ref.supabase.co/rest/v1/memos',
   });
+  // 5단계부터 원본 자료 주소가 없거나, http이거나, 쿼리·비밀이 붙어 있으면 빌드가 실패해야 합니다.
+  for (const bad of [undefined, null, '', 'http://project-ref.supabase.co/rest/v1/memos',
+    'https://project-ref.supabase.co/rest/v1/memos?select=*', 'https://user:pw@project-ref.supabase.co/rest/v1/memos',
+    'https://project-ref.supabase.co/rest/v1/memos#x', 'not a url']) {
+    assert.throws(() => deploymentIdentity(env, { ...config, originalApiUrl: bad }), /originalApiUrl/u, String(bad));
+  }
+  // 4단계 이하에서는 originalApiUrl을 싣지 않습니다.
+  assert.equal('originalApiUrl' in deploymentIdentity(env, { ...config, step: 4 }), false);
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_PROVIDER: undefined }, config));
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
   assert.throws(() => deploymentIdentity(env, { ...config, step: 0 }));
