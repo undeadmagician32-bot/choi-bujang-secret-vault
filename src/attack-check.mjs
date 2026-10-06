@@ -1,10 +1,12 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 
-// 4단계 자기 점검: 배포된 주소에 실제로 요청을 보내고, 받은 상태 코드만 기록합니다.
+// 5단계 자기 점검: 배포된 주소와 원본 자료 API에 실제로 요청을 보내고, 받은 상태 코드만 기록합니다.
 // 심판의 판정이 아닙니다. 토큰·키·메모 본문은 결과에 넣지 않습니다.
 // 위조 토큰은 매번 새로 만든 무작위 키로 서명한 가짜이며, 아무 비밀값도 쓰지 않습니다.
 // 로그인한 A·B 토큰이 필요한 타인 접근 점검은 토큰을 코드에 둘 수 없어서 여기에 없습니다(미실행).
 const KNOWN_MEMO_ID = 'b0b0b0b0-0000-4000-8000-000000000001'; // B의 공개 가능한 시험 메모 id
+// 화면 코드(public/index.html)에도 있는 공개용 publishable key입니다. 비밀 키가 아닙니다.
+const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
 function forgedToken(issuer) {
@@ -17,7 +19,7 @@ function forgedToken(issuer) {
 }
 
 export async function runAttackChecks(config) {
-  if (config.step !== 4) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  if (config.step !== 5) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   let app;
   try {
     app = new URL(config.publicAppUrl);
@@ -32,7 +34,18 @@ export async function runAttackChecks(config) {
   const issuer = config.identityProvider?.issuer;
   if (typeof issuer !== 'string' || !issuer) throw new Error('aleph.config.json의 identityProvider를 먼저 넣어 주세요.');
 
-  const send = (path, { method = 'GET', token, body } = {}) => {
+  let original;
+  try {
+    original = new URL(config.originalApiUrl);
+  } catch {
+    throw new Error('aleph.config.json의 originalApiUrl을 먼저 넣어 주세요.');
+  }
+  if (original.protocol !== 'https:' || original.username || original.password
+      || original.search || original.hash) {
+    throw new Error('originalApiUrl은 쿼리 없는 HTTPS 주소여야 합니다.');
+  }
+
+  const send = (path,{ method = 'GET', token, body } = {}) => {
     const headers = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -84,5 +97,13 @@ export async function runAttackChecks(config) {
   for (const [attackId, expected, path] of forged) {
     attempts.push({ attackId, expected, observed: verdict(await send(path, { token: forgedToken(issuer) })) });
   }
+  // 5단계: 원본 자료 API로 공개 키만 들고 직접 요청합니다. 토큰은 붙이지 않습니다.
+  const direct = await fetch(original, {
+    headers: { apikey: PUBLISHABLE_KEY }, redirect: 'error', signal: AbortSignal.timeout(10000),
+  });
+  attempts.push({ attackId: 'direct_original_api_anon',
+    expected: '공개 키로 원본 자료 API에 직접 요청하면 401 또는 403',
+    observed: direct.status === 401 || direct.status === 403
+      ? `HTTP ${direct.status}, 자료 없이 거부됨` : `HTTP ${direct.status}, 거부되지 않음` });
   return attempts;
 }

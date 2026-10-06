@@ -1,3 +1,5 @@
+-- (4단계 당시 기록) 5단계에서 authenticated의 직접 권한은 docs/MEMOS_REVOKE.sql로 다시 회수했습니다.
+-- 이 파일의 grant는 현재 DB 상태와 다릅니다. 정책과 RLS는 그대로 남아 있습니다.
 -- 4단계: public.memos의 RLS와 최소 권한. Supabase SQL Editor에서 실행합니다(기본 Run, RLS 우회 아님).
 -- 이메일·사용자 ID·메모 본문은 들어 있지 않습니다. 다른 테이블은 건드리지 않습니다.
 -- 앱 API는 서버 전용 키(RLS를 건너뜀)로 접근하므로, 이 SQL은 공개 키와 로그인 토큰으로 DB에

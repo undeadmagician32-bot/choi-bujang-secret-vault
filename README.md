@@ -143,7 +143,7 @@
 - `PUT`은 기존 행의 소유자가 본인일 때만 고쳐지고, 새 행의 `owner_id`도 확인된 사용자 ID로 고정합니다. 본문에 본인이 아닌 `owner_id`가 있으면 소유자 변경 시도로 보고 403 `OWNER_CHANGE_FORBIDDEN`으로 거부합니다.
 - `POST`는 본문의 `owner_id`를 무시하고 확인된 사용자 ID로 저장합니다. 목록 `GET /api/memos`는 로그인한 사용자 것만 돌려줍니다. `allowedRoutes`는 3단계와 같은 다섯 경로이며 실제 메서드·경로와 일치합니다.
 - DB: 학습 DB의 `public.memos`에서 기존 메모 세 건을 A 소유로 연결하고 B 소유의 시험 메모 한 건을 만들었습니다(이메일로 `auth.users`에서 ID를 찾는 일회성 SQL이라 저장소에 올리지 않았습니다). 이어서 `docs/MEMOS_RLS.sql`을 적용했습니다. `PUBLIC`·`anon`·`authenticated`의 권한을 모두 회수하고 RLS를 켠 뒤, `authenticated`에만 SELECT·INSERT·UPDATE·DELETE를 주었고, 정책 네 개는 모두 `auth.uid() = owner_id`일 때만 허용합니다(SELECT·DELETE는 기존 행 USING, INSERT는 새 행 WITH CHECK, UPDATE는 둘 다).
-- 앱 API는 서버 전용 키로 DB에 접근해서 RLS를 건너뜁니다. 그래서 앱에서 상대 행이 거부되는 것은 위 코드의 소유자 검사 덕분이고, RLS와 권한은 공개 키와 로그인 토큰으로 DB에 직접 접근하는 경우를 막는 두 번째 방어선입니다. 같은 이유로 `authenticated`에 권한을 준 만큼, 로그인한 사용자가 자기 행에 한해 DB에 직접 접근할 수 있게 열렸습니다.
+- 앱 API는 서버 전용 키로 DB에 접근해서 RLS를 건너뜁니다. 그래서 앱에서 상대 행이 거부되는 것은 위 코드의 소유자 검사 덕분이고, RLS와 권한은 공개 키와 로그인 토큰으로 DB에 직접 접근하는 경우를 막는 두 번째 방어선입니다. 같은 이유로 `authenticated`에 권한을 준 만큼, 로그인한 사용자가 자기 행에 한해 DB에 직접 접근할 수 있게 열렸습니다. 이 직접 접근은 5단계에서 다시 닫았습니다.
 
 ### 알려진 약점
 
@@ -177,6 +177,49 @@
   - `docs/MEMOS_RLS.sql` 적용 뒤 `role_table_grants`, `has_table_privilege`, `pg_policies` 결과를 캡처로 확인했습니다. `authenticated`는 4개 권한만 `true`이고 `anon`은 모두 `false`이며 정책은 네 개였습니다.
   - RLS 동작 시험(역할을 바꿔 상대 행 접근을 확인하는 SQL)은 학생이 실행했다고 알려 왔지만 결과 표는 보지 못했습니다.
   - **로그인한 A·B 토큰으로 상대 메모에 접근하는 점검은 `attack-check.mjs`에 넣지 못했습니다(미실행).** 토큰을 코드나 제출 묶음에 둘 수 없어서, 이 점검은 로그인 없이는 할 수 없는 부분만 기록합니다.
+
+## 5단계 현재 상태: 자료 요청을 서버 한곳으로
+
+- 브라우저 코드(`public/index.html`)는 메모 자료를 Supabase에서 직접 읽거나 고치는 곳이 없습니다. Supabase 호출은 로그인(`onAuthStateChange`, `getSession`, `signInWithPassword`, `signOut`)뿐이고, 자료는 모두 서버 함수(`/api/notes`, `/api/memos`, `/api/memos/:id`)를 부릅니다. 그래서 이번 단계에서 화면 코드는 바꾸지 않았습니다.
+- 서버 함수의 로그인 검사, 소유자 검사, 서버 전용 설정(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)은 그대로입니다.
+- DB: 학습 DB의 `public.memos`에서 `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다(`docs/MEMOS_REVOKE.sql`). 서버 전용 키가 쓰는 `service_role`은 그대로이고, RLS와 소유자 정책 네 개도 그대로 남겼습니다. 4단계에서 `authenticated`에 주었던 직접 접근은 이제 닫혀 있고, 메모는 서버 함수를 통해서만 읽고 쓸 수 있습니다.
+- `aleph.config.json`의 `originalApiUrl`은 쿼리 없는 원본 자료 HTTPS 경로 `https://vfsfpmggzswszqljxznx.supabase.co/rest/v1/memos`입니다(메모 테이블을 DB에서 직접 읽는 주소). 공개 키로 이 주소에 직접 요청하면 거부되어야 하고, 심판이 공개 키로 확인합니다.
+
+### 알려진 약점
+
+- 허용 경로 검사(`allowedRoutes`는 기록일 뿐 서버가 강제하지 않음)와 호출 횟수 제한이 없습니다.
+- 남의 메모 id로 `POST`하면 409 `ID_EXISTS`가 돌아와서, 그 id가 이미 있다는 사실(내용은 아님)이 드러납니다.
+- `originalApiUrl`은 메모 테이블 하나만 가리킵니다. 가상 메모 테이블 `archive_notes`의 직접 경로는 이 값에 없지만, 2단계에서 `anon`·`authenticated` 권한을 모두 회수해 두었습니다(이번 단계에서 다시 확인하지는 않았습니다).
+- 옛 커밋과 옛 배포의 `/data.json` 노출은 여전히 해소되지 않았습니다(위 「옛 노출」).
+
+## 5단계 저장점
+
+- 저장점: 5단계 「자료 요청을 서버 한곳으로 모읍니다」.
+- 지금 작동하는 기능
+  1. 화면은 자료를 서버 함수로만 요청하고, Supabase는 로그인에만 씁니다.
+  2. 서버 함수는 로그인 토큰과 소유자를 검사한 뒤 서버 전용 키로 DB를 읽고 씁니다. A는 자기 메모를 읽고 추가·수정·삭제합니다.
+  3. `public.memos`의 직접 권한은 `PUBLIC`·`anon`·`authenticated` 모두 없고, `service_role`만 있습니다.
+  4. 공개 키로 원본 자료 API(`/rest/v1/memos`)에 직접 요청하면 401(permission denied, 42501)입니다.
+  5. 3·4단계 기능(로그인·로그아웃, `/api/notes`의 토큰 검사, 소유자 검사 404·403)은 그대로입니다.
+- 다시 실행하는 방법
+  - 화면 파일만 만들 때: `npm run build -- --local`
+  - 시험: `npm run test:r5`, `npm run test:package`
+  - DB 권한 확인: `docs/MEMOS_REVOKE.sql`의 확인 쿼리를 하나씩 실행합니다.
+  - 화면 확인: A로 로그인해 메모를 추가·수정·삭제하고 목록을 봅니다.
+  - 제출 묶음: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 5로 올렸습니다. `scripts/deployment-identity.mjs`는 1~12를 허용해서 바꾸지 않았습니다.
+  - `originalApiUrl`은 위 주소이고, `scripts/bundle.mjs`가 5단계부터 요구하는 HTTPS 주소 조건을 충족합니다.
+  - `identityProvider`와 `allowedRoutes`는 4단계와 같고 구현과 일치합니다. `restoreRoute`는 null이며 저장소 안에 이 값을 설명하는 곳이 없어서 바꾸지 않았습니다. `judgeIssuer`도 바꾸지 않았습니다.
+  - `src/attack-check.mjs`는 5단계 점검 11건(4단계 10건 + 토큰 없이 공개 키만으로 원본 자료 API에 직접 요청)입니다. 전부 상태 코드만 기록합니다.
+  - `src/decider.mjs`의 `RULE_IDS`는 시작 틀의 `starter.deny` 하나뿐입니다. 6단계 이후에 구현합니다.
+- 확인한 것과 하지 않은 것
+  - 가짜 DB·가짜 토큰으로 A의 읽기·추가·수정·삭제 흐름과 무로그인 401을 시험했고 통과했습니다(임시 시험 파일은 저장소에 두지 않았습니다).
+  - 권한 회수 뒤 `role_table_grants`, `has_table_privilege`, RLS 상태를 캡처로 확인했습니다. `role_table_grants`에는 `service_role` 행만 남았고, `anon`과 `authenticated`는 4개 권한이 모두 `false`, `service_role`은 모두 `true`, `rls_on = true`였습니다.
+  - 공개 키로 `/rest/v1/memos`를 요청하면 HTTP 401, `permission denied for table memos`(42501)였고 자료는 오지 않았습니다(상태 코드만 확인).
+  - 학생이 권한 회수 뒤 화면에서 A의 동작이 모두 정상이라고 알려 왔습니다(제가 화면을 직접 보지는 못했습니다).
+  - **로그인 토큰(`authenticated`)으로 원본 자료 API에 직접 요청하는 점검은 하지 못했습니다(미실행).** 토큰을 코드나 제출 묶음에 둘 수 없어서입니다. 이 경로가 막혀 있다는 근거는 권한 확인(`has_table_privilege`)뿐입니다.
+  - 로그인한 A·B 토큰으로 서로의 메모에 접근하는 점검도 4단계 때와 같이 미실행입니다.
 
 ## 시작 틀의 자동 처리
 
