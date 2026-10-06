@@ -57,9 +57,16 @@ function plainObject(body) {
 }
 
 // 돌려주는 값: { value: { id?, title, body } } 또는 { error: 고정 코드 }
-export function readMemoInput(rawBody, { allowId }) {
+// userId를 주면 수정 요청이므로, 본문에 본인이 아닌 owner_id가 있을 때 소유자 변경 시도로 거부합니다.
+// 본문의 owner_id는 값으로 쓰지 않고, 같은 값이어도 저장에 쓰지 않습니다.
+export function readMemoInput(rawBody, { allowId, userId }) {
   const input = plainObject(rawBody);
   if (!input) return { error: 'INVALID_BODY' };
+  if (userId !== undefined) {
+    for (const key of ['owner_id', 'ownerId']) {
+      if (input[key] !== undefined && input[key] !== userId) return { error: 'OWNER_CHANGE_FORBIDDEN' };
+    }
+  }
   if (typeof input.title !== 'string' || typeof input.body !== 'string') return { error: 'INVALID_MEMO' };
   const title = input.title.trim();
   if (!title || title.length > TITLE_MAX || input.body.length > BODY_MAX) return { error: 'INVALID_MEMO' };
