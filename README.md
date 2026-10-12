@@ -249,6 +249,24 @@
   - 건수 구간·확신도 가중치·규칙 만료 1시간은 MITRE에 없는 연습용 값입니다. 심판의 판정이 아닙니다.
   - `npm run bundle`은 실행하지 않았습니다(미실행).
 
+## 보너스 xdr-02 저장점: 웹 주입 공격 탐지
+
+- 대상: `xdr/fixtures/web-injection.json`의 연습 경보 26건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1190(외부 공개 앱 악용)이고, 신호는 요청 인자 안의 SQL 구문·스크립트 태그·`../` 반복입니다.
+- 지금 작동하는 기능
+  1. `xdr/web-injection/decide.mjs`: `decide(alert)`가 `{action, confidence, reason}`을 돌려줍니다. 확신도 0.85 이상 block, 0.5 이상 alert, 그 아래 record입니다. 다른 파일을 불러오지 않고 파일을 읽거나 쓰지 않습니다. 패턴 세 개는 `patterns.json`과 같은 내용을 파일 맨 위 상수로 가집니다. 패턴마다 근거 한 줄이 있습니다.
+  2. `xdr/web-injection/read-alerts.mjs`: 확인용 읽기 모듈입니다. 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 문자열은 가립니다. `decide.mjs`는 불러오지 않습니다.
+  3. `xdr/web-injection/respond.mjs`: block 결과만 출발 주소 기준의 거부 규칙(만료 시각·근거 경보 번호 포함)으로 `xdr/web-injection/deny-rules.json`에 저장하고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓습니다. 정상 이벤트와 주소가 겹치거나 막을 수 없는 주소는 규칙을 만들지 않습니다. `src/decider.mjs`에는 연결하지 않았습니다.
+- 다시 실행하는 방법
+  - 판정 결과: `npm run xdr:run -- web-injection` (`xdr/web-injection/result.json` 갱신)
+  - 읽기 확인: `node xdr/web-injection/read-alerts.mjs` (경보 건수와 뽑은 줄 수가 같아야 함)
+  - 규칙·알림 만들기: `node xdr/web-injection/respond.mjs` (`deny-rules.json`, `alerts.log`는 실행마다 달라져서 커밋하지 않음)
+- 확인한 것: 위 `npm run xdr:run` 결과가 block 7, alert 10, record 9였고, 정상 후보(규칙 수준 3 이하) 9건은 모두 record였습니다. `respond.mjs`는 임시 폴더에서 같은 경보를 다시 흘려 block 경보의 주소 6개(경보 7건)만 막히고 나머지 19건은 통과하는 것을 확인했습니다.
+- 하지 않은 것
+  - 명령 구분자 경보(wi-06)는 `patterns.json`에 근거 있는 패턴이 없어서 block이 아니라 alert입니다. 패턴과 근거를 추가하기 전에는 block으로 올리지 않았습니다.
+  - 거부 규칙은 `src/decider.mjs`에 연결하지 않았습니다. 판정기 요청에는 출발 주소 항목이 없고, 새 이유 코드는 운영 등록부 등록이 필요합니다. 실제 접속 차단이라고 보지 않습니다.
+  - 반복 건수 구간·확신도 가중치·규칙 만료 1시간은 MITRE에 없는 연습용 값이고 이 연습 경보에 맞춰 정했습니다. 패턴 근거의 CAPEC·CWE 번호는 온라인으로 대조하지 않았습니다. 심판의 판정이 아닙니다.
+  - `npm run bundle`은 실행하지 않았습니다(미실행).
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포하고 `X-Content-Type-Options: nosniff` 머리글을 붙입니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.
