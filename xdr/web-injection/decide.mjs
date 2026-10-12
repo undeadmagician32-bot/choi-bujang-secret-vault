@@ -23,6 +23,13 @@ const PATTERNS = Object.freeze([
     condition: '같은 주소(data.srcip)의 요청 인자(data.url 의 경로 값)에 상위 폴더로 올라가는 표기(../)가 여러 단계 이어지거나 여러 번 반복되고, 설명(rule.description)과 data.count 가 그 반복을 보인다.',
     basis: 'MITRE ATT&CK T1190: 외부에 공개된 앱의 약점을 악용하는 초기 접근이며, ../ 로 공개 범위 밖 파일에 닿으려는 경로 이탈(CAPEC-126, CWE-22)이 그 대표적인 형태다.',
   }),
+  Object.freeze({
+    id: 'wi.command-separator-repeat',
+    name: '요청 인자 안의 명령 구분자 반복',
+    mitre: 'T1190',
+    condition: '같은 주소(data.srcip)의 요청 인자(data.url 의 쿼리 값)에 명령을 이어 붙이는 구분자 표기가 들어 있고, 설명(rule.description)과 data.count 가 연속 요청에서 반복됐음을 보인다.',
+    basis: 'MITRE ATT&CK T1190: 외부에 공개된 앱의 약점을 악용하는 초기 접근이며, 인자에 구분자로 운영체제 명령을 이어 붙이는 명령 삽입(CAPEC-88, CWE-78)이 그 대표적인 형태다.',
+  }),
 ]);
 
 const BLOCK_AT = 0.85;
@@ -34,6 +41,7 @@ const CLEAR_FORMS = Object.freeze([
   /SQL\s*(?:구문|표식|표기)|데이터베이스\s*조회를?\s*이어|구문을\s*이어\s*붙|union\s+select|\bor\s+1\s*=\s*1|doc-sql/i,
   /스크립트\s*(?:삽입|표식|태그)|<\s*script|%3c\s*script|doc-script/i,
   /거슬러|경로\s*이탈|\.\.\/|\.\.%2f|%2e%2e%2f|doc-up/i,
+  /명령\s*구분자|doc-cmd/i,
 ]);
 
 // 뚜렷하지는 않지만 의심스러운 단서입니다. 가까운 패턴 번호를 함께 적습니다.

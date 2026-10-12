@@ -34,9 +34,9 @@
     },
     {
       "alertId": "wi-06",
-      "action": "alert",
-      "confidence": 0.8,
-      "reason": "알려진 패턴 이름은 없지만 의심스러운 표기가 있고 뚜렷하지 않아 애매함"
+      "action": "block",
+      "confidence": 1,
+      "reason": "패턴 「요청 인자 안의 명령 구분자 반복」(T1190)에 뚜렷하게 맞음"
     },
     {
       "alertId": "wi-07",
@@ -160,8 +160,8 @@
     }
   ],
   "counts": {
-    "block": 7,
-    "alert": 10,
+    "block": 8,
+    "alert": 9,
     "record": 9
   }
 }
