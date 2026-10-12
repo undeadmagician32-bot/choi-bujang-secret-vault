@@ -1,0 +1,26 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "brute-force",
+  "technique": {
+    "id": "T1110",
+    "name": "Brute Force",
+    "source": "https://attack.mitre.org/techniques/T1110/"
+  },
+  "note": "건수·시간의 기준 숫자는 MITRE에 없어서 이 파일에 적지 않았습니다. decide.mjs 를 만들 때 xdr/fixtures/brute-force.json 을 보고 정합니다.",
+  "patterns": [
+    {
+      "id": "bf.same-source-fail-burst",
+      "name": "같은 주소의 짧은 시간 로그인 실패 연속",
+      "mitre": "T1110.001",
+      "condition": "경보 data.srcip 가 같은 주소에서 설명(rule.description)에 적힌 짧은 시간 안에 data.count 가 큰 로그인 실패가 이어졌고 성공이 섞이지 않았다.",
+      "basis": "MITRE ATT&CK T1110.001 비밀번호 추측: 공격자가 한 계정이나 한 주소에서 비밀번호를 반복해 넣어 맞는 값을 찾는다."
+    },
+    {
+      "id": "bf.multi-account-same-password",
+      "name": "여러 계정에 같은 비밀번호 대입",
+      "mitre": "T1110.003",
+      "condition": "같은 주소(data.srcip)가 서로 다른 여러 계정(data.accounts 또는 설명에 적힌 계정 수)에 같은 비밀번호로 로그인 실패를 연속으로 넣었다.",
+      "basis": "MITRE ATT&CK T1110.003 비밀번호 스프레이: 공격자가 흔한 비밀번호 하나를 여러 계정에 차례로 넣어 계정 잠금을 피한다."
+    }
+  ]
+}
