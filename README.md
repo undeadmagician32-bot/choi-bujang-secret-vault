@@ -457,7 +457,7 @@
 - 설정 대조 (`aleph.config.json`)
   - `step`을 10으로 올렸습니다. `allowedRoutes`에 `POST /api/memos/restore`를 더했고 `restoreRoute`를 같은 값으로 채웠습니다. 둘 다 `api/memos/restore.js`, `src/resources.mjs`와 일치합니다. `identityProvider`, `originalApiUrl`, `judgeIssuer`는 바꾸지 않았습니다.
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
-  - `src/attack-check.mjs`는 저장점 시점에 5단계 점검 13건 그대로입니다. 복원 경로 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
+  - `src/attack-check.mjs`는 5단계 점검 13건 그대로입니다. 저장점 직후 `npm run bundle`이 「이 단계의 공격 점검을 구현해 주세요」로 멈춰서, 허용 단계 목록에 10만 더했습니다(점검 내용은 그대로). 복원 경로 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
 - 하지 않은 것: 실제 Supabase SQL 실행, 배포 확인, 복구 뒤 1~9단계 재확인(위 표의 결과 칸은 모두 미실행).
 
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
