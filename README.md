@@ -372,6 +372,84 @@
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다. 탐지 규칙은 판정기 규칙이 아니라 `src/detect.mjs`에 있습니다.
   - `src/attack-check.mjs`는 9단계에서도 5단계 점검 13건을 그대로 씁니다. 접속 회수는 배포 주소로 보낼 수 있는 점검이 없어 심판이 점검합니다(미실행).
 
+## 10단계 현재 상태: 백업에서 자료실을 되살립니다
+
+저장점은 아래 「10단계 저장점」입니다. 배포 확인과 아래 SQL 실행은 하지 않았습니다(미실행).
+
+### 복원 서비스와 경로
+
+| 서비스 | 경로 | 하는 일 |
+|---|---|---|
+| 메모 복원 (`api/memos/restore.js`, 자원 ID `vault.memo`) | `POST /api/memos/restore` | 본문 `{ "id": "<메모 UUID>" }` 하나만 받아 로그인한 본인의 메모 한 건을 비공개 사본에서 되살립니다. 성공하면 200 `{ id, restored: true, contentSha256 }`. |
+| 비공개 메모 사본 (Supabase 테이블 `public.memos_backup`) | 외부 경로 없음 | 서버 전용 키만 읽습니다. `docs/MEMOS_BACKUP.sql`로 만들고 침해 전에 사본을 뜹니다. anon·authenticated 권한은 모두 회수합니다. |
+| 정책 차이 보기·되돌리기 (`scripts/policy-diff.mjs`, `scripts/policy-restore.mjs`) | 로컬 명령만 | 검증한 안전 정책 사본(`backup/policy-snapshot.json`)과 정책 파일 여섯 개의 차이를 보여 주고, `--confirm <버전 7자리>`를 붙였을 때만 되돌립니다. |
+
+- `aleph.config.json`: `allowedRoutes`에 `POST /api/memos/restore`를 더했고, `restoreRoute`를 같은 값으로 채웠습니다.
+- 복원 경로의 대조: 사본의 ID·소유자가 요청 ID·확인된 사용자와 같고, 저장된 `content_sha256`이 제목·본문에서 다시 계산한 값과 같을 때만 씁니다(다르면 409 `BACKUP_UNVERIFIED`). 쓴 뒤 다시 읽어 세 값이 사본과 같은지 확인합니다. 내용 해시는 `sha256(제목 || 0x00 || 본문)`입니다.
+- 남의 메모 ID나 사본이 없는 ID는 404, 비로그인 401, POST가 아닌 요청 405, 본문에 `id` 말고 다른 항목이 있으면 400입니다. 다른 메모, 사본, 기록 테이블은 바꾸지 않고, 로그에는 `MEMO_RESTORED` 같은 고정 문구만 남깁니다.
+
+### 확인 순서
+
+1. `npm run memo:restore:test`: pass 5. 시험 계정 B의 가상 메모만 가짜 로그인·가짜 DB로 복원하며, 실제 Supabase나 배포에는 요청하지 않습니다.
+2. `npm run policy:diff:test`(「통과」 여덟 줄), `npm run policy:restore:test`(pass 1).
+3. 배포 뒤: SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 1·2번을 실행하고 3번 확인에서 `hash_mismatch`가 0인지 봅니다. B로 로그인해 B 메모 하나를 고친 뒤 개발자 도구 콘솔에서 `/api/memos/restore`로 그 ID를 POST하면 200이고, 다시 읽은 메모가 사본 내용이어야 합니다. A 메모 ID로 보내면 404여야 합니다.
+
+### 복구 뒤 1~10단계 다시 확인하는 순서
+
+복구를 마친 뒤 위에서 아래로 실행합니다. 아래 표의 「복구 뒤 결과」는 **모두 미실행**입니다. 실제로 실행한 칸만 날짜와 본 결과로 바꾸고, 실행하지 않은 칸은 미실행으로 둡니다. 2026-10-13에 복구 전 작업 폴더에서 로컬 명령(`decider:test`, `fixture:7`, `detect:test`, `test:r5`, `test:package`, `policy:diff:test`, `policy:restore:test`, `memo:restore:test`)이 통과한 적은 있지만, 그것은 복구 뒤 결과가 아닙니다.
+
+**가. 복구하기**
+
+1. `npm run policy:restore`로 복원할 버전과 되돌릴 파일을 확인한 뒤, 맞으면 `npm run policy:restore -- --confirm <버전 7자리>`를 실행합니다.
+2. 바뀐 메모마다 B로 로그인해 `POST /api/memos/restore`에 그 ID를 보냅니다(메모 한 건씩).
+3. 되돌린 파일을 커밋·push하고 Vercel 배포가 끝났는지 Deployments에서 봅니다. 아래 「다」는 새 배포가 끝나야 의미가 있습니다.
+
+**나. 자료와 정책이 돌아왔는지**
+
+| 확인 | 명령·방법 | 돌아왔을 때 | 실패 | 복구 뒤 결과 |
+|---|---|---|---|---|
+| 정책 | `npm run policy:diff` | 「변경 범위: 없음」 | 파일이 하나라도 나오거나 「중단」 | 미실행 |
+| 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 | 미실행 |
+| 복원한 메모 | B로 로그인해 `GET /api/memos/<ID>` | 사본과 같은 제목·본문, 응답 200 | 404, 내용이 다름 | 미실행 |
+| 다른 메모 | A로 로그인해 메모 목록 | 복구 전과 같은 건수·제목 | 줄거나 바뀜 | 미실행 |
+
+**다. 단계별 정상 요청과 금지 요청** (배포 뒤, 로컬 연습은 표시한 명령)
+
+| 단계 | 정상 요청 (계속 되어야 함) | 금지 요청 (다시 거부되어야 함) | 명령·방법 | 복구 뒤 결과 |
+|---|---|---|---|---|
+| 1~2 | 비로그인 `/` 200 | 비로그인 `/data.json` 404, 화면 코드에 키·메모 문장 없음 | `npm run bundle`의 직접 점검 | 미실행 |
+| 3 | A 로그인 뒤 `/api/notes` 200 | 비로그인·위조 토큰으로 `/api/notes`, `/api/memos` 401 | `npm run bundle`의 직접 점검 | 미실행 |
+| 4 | A가 자기 메모 읽기·수정 200 | B가 A 메모 읽기·수정·삭제 404, 본문으로 소유자 바꾸기 403 | 화면 로그인 뒤 개발자 도구 콘솔 `fetch` | 미실행 |
+| 5 | 화면이 `/api/memos`로 메모를 읽음 | 공개 키로 `originalApiUrl` 직접 요청 거부 | `npm run bundle`의 직접 점검 | 미실행 |
+| 6 | 등록 기기 읽기 `allow` | 미등록 기기 `deny device_not_registered` | `npm run decider:test` (로컬 연습) | 미실행 |
+| 7 | 정상 사건 `allow` | 복합 이상 사건 `step_up` | `npm run decider:test`, `npm run fixture:7` (로컬 연습) | 미실행 |
+| 8 | A 메모 응답의 `X-Resource-Id: vault.memo` | 학생 공지 수정 403, 비로그인 공지 수정 401 | 개발자 도구 네트워크 탭과 콘솔 `fetch` | 미실행 |
+| 9 | 정상 조회 30건 `observe` | 10분 안 121건·200건 회수 제안 | `npm run detect:test` (로컬 연습) | 미실행 |
+| 10 | B가 자기 메모 복원 200 | B가 A 메모 ID로 복원 404 | 콘솔 `fetch`, `npm run memo:restore:test` | 미실행 |
+| 공통 | 위 시험이 그대로 통과 | — | `npm run test:r5`, `npm run test:package` | 미실행 |
+
+- `npm run bundle`은 커밋되지 않은 파일이 있으면 멈춥니다. 복구한 파일을 커밋한 뒤 실행합니다. 직접 점검 결과는 학생 자기 점검이며 심판의 판정이 아닙니다.
+- 6·7·9단계 명령은 가상 요청 연습입니다. 실제 미등록 기기 접속, 추가 확인 흐름, 접속 회수는 운영 엔진과 심판이 확인하며 이 저장소에서는 미실행입니다.
+- 실패한 줄이 있으면 그 줄의 단계 파일을 `npm run policy:diff`로 다시 보고, 첫 실패 하나만 근거로 고칩니다.
+
+### 아직 확인하지 못한 것
+
+- SQL의 해시 계산이 `memoContentSha256`과 같은 값을 내는지는 실제 Postgres에서 확인하지 않았습니다(위 3번의 `hash_mismatch`와 복원 200으로 확인).
+- 실제 배포에서 B 계정으로 한 복원은 미실행입니다. 운영 측 `restoreRoute` 형식이 이 값과 같은지는 저장소 안에 설명이 없어 확인하지 못했습니다.
+
+## 10단계 저장점
+
+- 저장점: 10단계 「백업에서 자료실을 되살립니다」.
+- 지금 작동하는 기능
+  1. 검증한 안전 정책 사본과 현재 정책 파일 여섯 개의 차이를 보여 주고(`npm run policy:diff`), 화면에 나온 버전을 `--confirm`으로 적었을 때만 그 파일들을 되돌립니다(`npm run policy:restore`). 바뀌기 전 내용과 감사 기록 한 줄을 `backup/`에 남깁니다.
+  2. `POST /api/memos/restore`는 비공개 사본(`memos_backup`)에서 로그인한 본인의 메모 한 건만 ID·소유자·내용 해시를 대조해 되살립니다.
+  3. 9단계 탐지, 8단계 구역, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
+- 다시 실행하는 방법: 위 「확인 순서」와 「복구 뒤 1~10단계 다시 확인하는 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 10으로 올렸습니다. `allowedRoutes`에 `POST /api/memos/restore`를 더했고 `restoreRoute`를 같은 값으로 채웠습니다. 둘 다 `api/memos/restore.js`, `src/resources.mjs`와 일치합니다. `identityProvider`, `originalApiUrl`, `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
+  - `src/attack-check.mjs`는 10단계에서도 5단계 점검 13건을 그대로 씁니다. 복원 경로는 새 배포가 끝나야 의미가 있어 비로그인 복원 401 점검은 넣지 않았습니다(미실행).
+
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
 - 대상: `xdr/fixtures/brute-force.json`의 연습 경보 28건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1110입니다.

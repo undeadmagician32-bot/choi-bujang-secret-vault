@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from './verify-login.mjs';
@@ -47,8 +48,13 @@ export function methodNotAllowed(response, allow) {
   response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
 }
 
+// 10단계: 메모 내용 해시. 제목과 본문을 UTF-8로 잇고 사이에 0 바이트 하나를 둡니다(Postgres text에는 0 바이트가 없어 경계가 섞이지 않음).
+// docs/MEMOS_BACKUP.sql의 content_sha256과 같은 방식입니다.
+export const memoContentSha256 = (title, body) => createHash('sha256')
+  .update(Buffer.concat([Buffer.from(title, 'utf8'), Buffer.from([0]), Buffer.from(body, 'utf8')])).digest('hex');
+
 // Vercel은 JSON 본문을 객체로 풀어 주지만, 그렇지 않은 경우도 안전하게 처리합니다.
-function plainObject(body) {
+export function plainObject(body) {
   let value = body;
   if (typeof value === 'string') {
     try { value = JSON.parse(value); } catch { return null; }
