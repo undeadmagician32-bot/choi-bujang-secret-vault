@@ -18,7 +18,8 @@
     "policy:restore:test": "node --test --experimental-test-module-mocks test/policy-restore.test.mjs",
     "policy:snapshot": "node scripts/policy-snapshot.mjs",
     "policy:snapshot:test": "node --test test/policy-snapshot.test.mjs",
-    "judge-owner:test": "node --test --experimental-test-module-mocks test/judge-owner.test.mjs"
+    "judge-owner:test": "node --test --experimental-test-module-mocks test/judge-owner.test.mjs",
+    "decider:contract:test": "node --test test/decider-contract.test.mjs"
   },
   "engines": {
     "node": ">=22"
