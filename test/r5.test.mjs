@@ -50,14 +50,6 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   }
   // 4단계 이하에서는 originalApiUrl을 싣지 않습니다.
   assert.equal('originalApiUrl' in deploymentIdentity(env, { ...config, step: 4 }), false);
-  // 10단계부터 복원 경로를 싣고, 없거나 허용 경로에 없으면 빌드가 실패합니다. 9단계 이하에서는 싣지 않습니다.
-  const restoreConfig = { ...config, step: 10, allowedRoutes: [...config.allowedRoutes, 'POST /api/memos/restore'],
-    restoreRoute: 'POST /api/memos/restore' };
-  assert.equal(deploymentIdentity(env, restoreConfig).restoreRoute, 'POST /api/memos/restore');
-  for (const bad of [undefined, null, '', 'POST /api/other', '/api/memos/restore', 'POST /api/memos/restore?x=1']) {
-    assert.throws(() => deploymentIdentity(env, { ...restoreConfig, restoreRoute: bad }), /restoreRoute/u, String(bad));
-  }
-  assert.equal('restoreRoute' in deploymentIdentity(env, { ...restoreConfig, step: 9 }), false);
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_PROVIDER: undefined }, config));
   assert.throws(() => deploymentIdentity({ ...env, VERCEL_GIT_COMMIT_SHA: 'short' }, config));
   assert.throws(() => deploymentIdentity(env, { ...config, step: 0 }));

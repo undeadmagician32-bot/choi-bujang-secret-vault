@@ -61,13 +61,5 @@ export function deploymentIdentity(env, config) {
     }
     identity.originalApiUrl = original;
   }
-  // 10단계부터 aleph.json에 복원 경로("METHOD /경로")를 싣습니다. 허용 경로에 있는 값이어야 합니다.
-  if (config.step >= 10) {
-    const route = config.restoreRoute;
-    if (typeof route !== 'string' || !ROUTE.test(route) || !identity.allowedRoutes.includes(route)) {
-      throw new Error('10단계부터 aleph.config.json의 restoreRoute에 allowedRoutes에 있는 "METHOD /경로" 꼴의 복원 경로가 필요합니다.');
-    }
-    identity.restoreRoute = route;
-  }
   return identity;
 }
