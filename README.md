@@ -268,6 +268,42 @@
   - `src/decider.mjs`의 `RULE_IDS`는 `starter.deny`(규칙에 맞지 않는 요청의 기본 거부)와 `device_registered` 두 개이며, 둘 다 실제로 쓰입니다.
   - `src/attack-check.mjs`는 6단계에서도 5단계 점검 13건을 그대로 씁니다. 배포 주소로 보낼 수 있는 새 점검이 없고, 미등록 기기 접속은 심판이 점검합니다.
 
+## 7단계 현재 상태: 평소와 다른 접속은 다시 확인합니다
+
+- `src/decider.mjs`에 규칙 `step_up_required`를 추가했습니다. `RULE_IDS`는 `['starter.deny', 'device_registered', 'step_up_required']`입니다.
+- 입력 검사(`readAccessContext`): 계약의 `signals`·`recentEvents`만 접속 정보로 읽고 출처를 `judge_fixture`(심판 가상 요청), `engine_none`(엔진이 정보 없음을 알림), `unverified`(없음·출처 불명·항목 추가)로 나눕니다. 지역·네트워크·시각 값은 `judge_fixture`일 때만 남기고, `unknown`·범위 밖·형식이 틀린 값은 `null`로 둡니다. 정상값으로 채우지 않습니다. 계약 밖 항목(헤더, `geo` 등)은 읽지 않으므로 위조한 클라이언트 헤더는 접속 정보가 되지 않습니다.
+- 등록 기기의 읽기 요청에서 평소와 다른 시각(0~5시), 처음 보는 네트워크(`network: "unusual"`), 최근 5분 사건 10건 이상이 **모두** 맞으면 `step_up`(이유 코드 `step_up_required`)입니다. 기준값은 연습용이며 운영 기준이 아닙니다. 사건 종류는 계약에 목록이 없어 건수만 셉니다.
+- 지역은 조건에 넣지 않았고 이 규칙은 `deny`(차단)를 돌려주지 않습니다. 엔진이 확인한 재인증(`stepUp.verified`)이 300초 이내면 같은 사건도 `allow`입니다.
+- 기기 규칙이 먼저 적용되어 미등록 기기는 그대로 `device_not_registered`로 거부됩니다. 출처가 불명확한 신호는 이상 징후로도 쓰지 않으므로, 위조 헤더로 꾸민 이상 요청은 일반 등록 기기 규칙(`allow`)을 따릅니다.
+
+### 확인 순서
+
+1. 저장소 폴더에서 `npm run decider:test`를 실행합니다. 「통과」가 네 줄(등록 기기 정상 요청, 미등록 기기, 복합 이상 접속, 다시 확인한 복합 이상 접속) 나와야 합니다.
+2. `npm run fixture:7`을 실행합니다. 「정상 사건: allow」, 「복합 이상 사건: step_up」이 나와야 합니다.
+3. 「확인 필요」나 「첫 오류」가 나오면 실패입니다.
+
+2026-10-13 실행 결과는 위와 같았습니다. 이 연습은 가상 요청이며 심판의 판정이 아닙니다.
+
+### 아직 확인하지 못한 것
+
+- 계약에는 `stepUp: {verified, authAgeSeconds}`만 있고, 같은 로그인으로 다시 로그인했는지, 확인 전 자료를 막고 새 요청을 다시 판정하는 흐름은 운영 엔진 쪽에 있어 이 저장소에 없습니다. 자료실 서버 함수(`api/`)도 판정기를 부르지 않습니다. 실제 배포에서 다시 로그인 전 차단과 새 로그인 뒤 허용은 **미실행**입니다.
+- 이유 코드 `step_up_required`는 연습 시험(`scripts/decider-test.mjs`)에서 가져왔습니다. 운영 등록부의 `allowedReasonCodes`가 저장소에 없어 등록 여부는 확인하지 못했습니다.
+
+## 7단계 저장점
+
+- 저장점: 7단계 「평소와 다른 접속은 다시 확인합니다」.
+- 지금 작동하는 기능
+  1. 판정기는 출처가 확인된 가상 접속 정보만 읽고, 복합 이상 읽기는 추가 확인(`step_up`), 최근 재인증 뒤에는 허용합니다.
+  2. 6단계 기기 규칙과 5단계까지의 기능(서버 함수 로그인, 토큰·소유자 검사, DB 직접 권한 회수)은 그대로입니다.
+- 다시 실행하는 방법
+  - 판정기 연습: `npm run decider:test`, `npm run fixture:7` (위 「확인 순서」)
+  - 시험: `npm run test:r5`, `npm run test:package`
+  - 제출 묶음: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 7로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 6단계와 같고 구현과 일치합니다. `restoreRoute`와 `judgeIssuer`는 바꾸지 않았습니다.
+  - `RULE_IDS`의 세 규칙은 모두 실제로 쓰입니다.
+  - `src/attack-check.mjs`는 7단계에서도 5단계 점검 13건을 그대로 씁니다. 배포 주소로 보낼 새 점검이 없고, 이상 접속은 심판이 점검합니다.
+
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
 - 대상: `xdr/fixtures/brute-force.json`의 연습 경보 28건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1110입니다.
