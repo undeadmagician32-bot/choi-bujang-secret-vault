@@ -304,6 +304,43 @@
   - `RULE_IDS`의 세 규칙은 모두 실제로 쓰입니다.
   - `src/attack-check.mjs`는 7단계에서도 5단계 점검 13건을 그대로 씁니다. 배포 주소로 보낼 새 점검이 없고, 이상 접속은 심판이 점검합니다.
 
+## 8단계 현재 상태: 자료마다 갈 수 있는 구역을 나눕니다
+
+- 자원 ID(`src/resources.mjs`): 내 자료실 메모(`/api/memos`, `/api/memos/:id`)는 `vault.memo`, 강사 공지(`/api/notes`)는 `class.notice`입니다. 서버 함수가 응답 머리글 `X-Resource-Id`에 붙이며, 클라이언트가 보낸 값은 읽지 않습니다. 이 자료실에는 따로 만든 공지 자료가 없어, 로그인한 모두가 읽기만 하는 `/api/notes`(`archive_notes`)를 공지로 정했습니다.
+- 판정기 구역 규칙(`src/decider.mjs`): `RULE_IDS`에 `route_zone`, `memo_zone`, `notice_write_zone`을 더했습니다(이전 세 규칙 유지).
+  - `route_zone`: 엔진이 확인한 `subjectId`·`deviceId`가 있고, `route`가 `GET /notes/:id`, `PUT /notes/:id`, `PUT /notices/:id` 중 하나이며, 메서드·서비스·`path`가 정확히 맞고 쿼리가 없을 때만 다음 규칙으로 갑니다. 나머지는 `route_not_allowed`(사용자·기기 없음은 `subject_not_verified`)로 거부합니다. 경로 마지막 칸은 자료 ID만 받고 `export` 같은 기능 경로는 없습니다.
+  - `memo_zone`: 등록 기기의 메모 읽기·수정은 `allow`입니다. 읽기에는 7단계 추가 확인이 먼저 적용됩니다.
+  - `notice_write_zone`: 공지 수정은 `instructor_not_verified`로 거부합니다. 계약에 엔진이 확인한 역할이 없기 때문입니다.
+  - 엔진 쪽 경로 이름 `/notes`는 연습 요청(`fixture:7`)을 따랐고 메모를 뜻합니다. `/notices`는 제가 정한 이름이라 운영 엔진과 다를 수 있습니다.
+- 자료 API 재대조: 메모 API는 4단계 소유자 비교(`owner_id` = 검증된 사용자)를 유지하고, 404로 거부할 때 `MEMO_DENIED not_owner|not_found`만 로그에 남깁니다(응답은 같은 404). 공지 API의 쓰기 요청은 로그인 검사 뒤 저장된 강사 권한을 확인합니다. 강사 권한을 저장한 곳이 아직 없어 누구의 수정도 403(`NOTICE_DENIED instructor_not_verified`)이고, 비로그인은 401입니다. 화면 메뉴나 본문·쿼리의 `role`은 읽지 않습니다.
+
+### 확인 순서
+
+1. `npm run decider:test`: 「통과」 네 줄. `npm run fixture:7`: 「정상 사건: allow」, 「복합 이상 사건: step_up」.
+2. `npm run test:r5`(pass 2), `npm run test:package`(pass 3).
+3. 배포 뒤 B로 로그인해 개발자 도구 콘솔에서 A 메모 주소로 `fetch`를 보내면 404여야 합니다. 200이나 메모 내용이 나오면 실패입니다. 네트워크 탭에서 `/api/memos`와 `/api/notes`의 `X-Resource-Id`가 서로 달라야 합니다.
+
+2026-10-13에 가짜 DB로 서버 함수를 직접 부른 결과, A 자기 메모 200, B의 A 메모 읽기·수정·삭제 404(쿼리·본문에 `role=instructor`를 넣어도 같음), 학생 공지 수정 403, 비로그인 공지 수정 401이었습니다. 판정기 연습에서는 A 메모 읽기·수정 `allow`, 공지 수정 `deny`, 쿼리·`/notes/:id/export`·DELETE는 `route_not_allowed`였습니다. 가상 요청이며 심판의 판정이 아닙니다.
+
+### 아직 확인하지 못한 것
+
+- 판정 계약에 메모 주인 항목이 없어 판정기 혼자서는 B의 A 메모를 거부하지 못합니다. 이 거부는 서버 함수의 소유자 검사가 맡습니다.
+- 강사 권한 저장소가 없어 강사의 공지 수정은 구현하지 않았습니다. 새 이유 코드(`route_not_allowed`, `subject_not_verified`, `instructor_not_verified`)의 운영 등록부 등록 여부는 확인하지 못했습니다.
+- 실제 배포에서 A·B 계정으로 한 타인 구역 점검은 미실행입니다(토큰을 코드에 둘 수 없음).
+
+## 8단계 저장점
+
+- 저장점: 8단계 「자료마다 갈 수 있는 구역을 나눕니다」.
+- 지금 작동하는 기능
+  1. 메모와 공지는 서로 다른 자원 ID로 구분되고, 판정기는 정확히 맞는 구역 경로만 다음 규칙으로 넘깁니다.
+  2. 자료 API는 검증된 사용자와 저장된 소유자·강사 권한을 다시 대조하고 짧은 거부 사유를 남깁니다.
+  3. 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 8로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 7단계와 같고 구현과 일치합니다. `restoreRoute`와 `judgeIssuer`는 바꾸지 않았습니다.
+  - `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다. `starter.deny`는 구역 표에 맞았지만 처리 규칙이 없는 요청의 마지막 거부입니다.
+  - `src/attack-check.mjs`는 8단계에서도 5단계 점검 13건을 그대로 씁니다. 공지 쓰기 401·403 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
+
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
 - 대상: `xdr/fixtures/brute-force.json`의 연습 경보 28건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1110입니다.

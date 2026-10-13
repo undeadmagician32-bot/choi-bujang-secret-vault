@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { authorize, dbFailed, methodNotAllowed, readMemoInput } from '../../src/memo-api.mjs';
+import { markResource } from '../../src/resources.mjs';
 
 // GET /api/memos  : 로그인한 사용자의 메모 목록
 // POST /api/memos : { id?, title, body } → 201 { id }. owner_id는 서버가 확인한 사용자 ID로만 저장합니다.
@@ -8,6 +9,7 @@ export default async function handler(request, response) {
     methodNotAllowed(response, 'GET, POST');
     return;
   }
+  markResource(response, `${request.method} /api/memos`);
   const session = await authorize(request, response);
   if (!session) return;
   const { userId, supabase } = session;

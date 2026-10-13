@@ -1,5 +1,6 @@
-import { authorize, dbFailed, isUuid, methodNotAllowed, readMemoInput }
+import { authorize, dbFailed, isUuid, logMemoDenied, methodNotAllowed, readMemoInput }
   from '../../src/memo-api.mjs';
+import { markResource } from '../../src/resources.mjs';
 
 // GET·PUT·DELETE /api/memos/:id
 // 4단계: 서버가 토큰으로 확인한 userId와 DB의 owner_id가 같은 행만 다룹니다.
@@ -11,6 +12,7 @@ export default async function handler(request, response) {
     methodNotAllowed(response, 'GET, PUT, DELETE');
     return;
   }
+  markResource(response, `${request.method} /api/memos/:id`);
   const session = await authorize(request, response);
   if (!session) return;
   const { userId, supabase } = session;
@@ -23,7 +25,11 @@ export default async function handler(request, response) {
       const { data, error } = await supabase.from('memos').select('id, title, body')
         .eq('id', id).eq('owner_id', userId).maybeSingle();
       if (error) { dbFailed(response, 'MEMO_READ_FAILED', error); return; }
-      if (!data) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+      if (!data) {
+        await logMemoDenied(supabase, id);
+        response.status(404).json({ error: 'NOT_FOUND' });
+        return;
+      }
       response.status(200).json({ id: data.id, title: data.title, body: data.body });
       return;
     }
@@ -41,7 +47,11 @@ export default async function handler(request, response) {
           updated_at: new Date().toISOString() })
         .eq('id', id).eq('owner_id', userId).select('id');
       if (error) { dbFailed(response, 'MEMO_UPDATE_FAILED', error); return; }
-      if (!data?.length) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+      if (!data?.length) {
+        await logMemoDenied(supabase, id);
+        response.status(404).json({ error: 'NOT_FOUND' });
+        return;
+      }
       response.status(200).json({ id });
       return;
     }
@@ -49,7 +59,11 @@ export default async function handler(request, response) {
     const { data, error } = await supabase.from('memos').delete()
       .eq('id', id).eq('owner_id', userId).select('id');
     if (error) { dbFailed(response, 'MEMO_DELETE_FAILED', error); return; }
-    if (!data?.length) { response.status(404).json({ error: 'NOT_FOUND' }); return; }
+    if (!data?.length) {
+      await logMemoDenied(supabase, id);
+      response.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
     response.status(200).json({ id });
   } catch {
     console.error('MEMO_REQUEST_FAILED');

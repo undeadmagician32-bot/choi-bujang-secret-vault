@@ -78,6 +78,17 @@ export function readMemoInput(rawBody, { allowId, userId }) {
   return { value };
 }
 
+// 8단계: 소유자 검사로 404를 돌려줄 때 거부 사유를 짧게 남깁니다. 사용자 ID·메모 ID·본문은 남기지 않고,
+// 응답은 그대로 404여서 남의 메모가 있는지 알려 주지 않습니다.
+export async function logMemoDenied(supabase, id) {
+  try {
+    const { data } = await supabase.from('memos').select('id').eq('id', id).maybeSingle();
+    console.warn('MEMO_DENIED', data ? 'not_owner' : 'not_found');
+  } catch {
+    console.warn('MEMO_DENIED', 'unknown');
+  }
+}
+
 export function dbFailed(response, label, error) {
   // 오류 문구에는 요청 정보가 섞일 수 있어 고정 코드와 오류 코드만 남깁니다.
   console.error(label, error?.code ?? 'unknown');
