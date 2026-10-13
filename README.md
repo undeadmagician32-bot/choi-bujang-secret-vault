@@ -341,6 +341,37 @@
   - `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다. `starter.deny`는 구역 표에 맞았지만 처리 규칙이 없는 요청의 마지막 거부입니다.
   - `src/attack-check.mjs`는 8단계에서도 5단계 점검 13건을 그대로 씁니다. 공지 쓰기 401·403 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
 
+## 9단계 현재 상태: 도플갱어를 찾고 권한을 거둡니다
+
+- 사건 입력 정리(`src/detect.mjs`의 `readDetectionEvents`): `docs/DETECT_EVENTS.md` 계약의 `{at, method, identity: {sub}}`만 받아 `{subject, method, at}`로 옮깁니다. 계약에 없는 항목(메모 본문·토큰·이름 등)이 붙었거나, 가명이 영문·숫자·`_`·`-`가 아니거나, 시각이 UTC ISO가 아닌 사건은 고쳐 쓰지 않고 버리며 건수만 셉니다. 사건에 기기·판정 항목은 없어 읽지 않습니다.
+- 다량 조회 규칙(`detect()`): 같은 가명 사용자의 GET이 어느 10분 구간에서든 120건을 넘을 때만 `{action: 'propose_revocation', reasonCode: 'burst_read', subject}`, 나머지는 `{action: 'observe'}`입니다. 정확히 120건, 다른 사용자 합산, 10분 밖 사건, GET이 아닌 요청은 세지 않습니다. 탐지 사건에 네트워크·지역이 없어 이 규칙은 그것을 보지 않으며, 평소와 다른 네트워크와 많은 읽기의 조합은 7단계 판정기(`step_up`)가 계속 맡습니다.
+- 회수 제안(`proposeRevocation(detection, verified)`): `detect()` 응답과 판정기의 allow/deny/step_up 응답은 그대로 두고 별도 결과 한 건을 만듭니다. 기기는 엔진이 확인한 `{subjectId, deviceId}` 한 쌍(판정기 계약 형식, 16자리 소문자 16진수)으로만 받고, 탐지된 가명과 `subjectId`가 같을 때만 `{action: 'propose_revocation', reasonCode: 'burst_read', target: {subjectId, deviceId}}`를 돌려줍니다. 그 밖에는 `null`입니다. 회수 API 호출, 기기 권한 변경, 시각 기록은 하지 않습니다.
+
+### 확인 순서
+
+1. `npm run detect:test`: 「통과」 여섯 줄. 「정상 조회 30건」이나 「10분 안에 120건」이 「확인 필요」면 실패입니다.
+2. `npm run decider:test`(「통과」 네 줄), `npm run fixture:7`(allow, step_up), `npm run test:r5`(pass 2), `npm run test:package`(pass 3).
+
+2026-10-13에 가상 사건으로 함수를 직접 부른 결과, 의심 200건은 `learner_fixture` 기기 한 개와 `burst_read`가 담긴 회수 제안, 정상 30건·정확히 120건은 제안 없음이었습니다. 다른 사용자의 기기, 형식이 틀린 기기 ID, 기기 두 개, 계약 밖 항목이 붙은 입력은 모두 제안 없음이었고, 메모 본문·토큰·이름을 섞은 사건은 버려져 결과에 나오지 않았습니다. 가상 사건이며 심판의 판정이 아닙니다.
+
+### 아직 확인하지 못한 것
+
+- 운영 반 엔진이 검증한 사건을 `detect()`에 전달하는 경로와 회수 제안을 집행하는 경로는 연결·시험하지 않았습니다. 실제 접속 회수와 회수 시간은 심판이 확인합니다.
+- 탐지 사건에 기기가 없어, 가명 사용자와 기기 한 쌍을 잇는 일은 엔진의 몫으로 두었습니다. `burst_read`가 운영 등록부에 있는지는 확인하지 못했습니다.
+
+## 9단계 저장점
+
+- 저장점: 9단계 「도플갱어를 찾고 권한을 거둡니다」.
+- 지금 작동하는 기능
+  1. 탐지 함수는 가상 사건에서 가명 사용자·요청 종류·시각만 읽고 비밀값이 섞인 사건은 버립니다.
+  2. 같은 사용자의 10분 안 조회가 120건을 넘으면 회수를 제안하고, 확인된 기기 한 개를 대상으로 하는 별도 회수 제안을 만듭니다.
+  3. 8단계 구역 규칙, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 9로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 8단계와 같고 구현과 일치합니다. `restoreRoute`와 `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다. 탐지 규칙은 판정기 규칙이 아니라 `src/detect.mjs`에 있습니다.
+  - `src/attack-check.mjs`는 9단계에서도 5단계 점검 13건을 그대로 씁니다. 접속 회수는 배포 주소로 보낼 수 있는 점검이 없어 심판이 점검합니다(미실행).
+
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
 - 대상: `xdr/fixtures/brute-force.json`의 연습 경보 28건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1110입니다.
