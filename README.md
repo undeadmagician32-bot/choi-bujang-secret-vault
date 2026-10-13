@@ -232,6 +232,42 @@
   - **로그인 토큰(`authenticated`)으로 원본 자료 API에 직접 요청하는 점검은 하지 못했습니다(미실행).** 토큰을 코드나 제출 묶음에 둘 수 없어서입니다. 이 경로가 막혀 있다는 근거는 권한 확인(`has_table_privilege`)뿐입니다.
   - 로그인한 A·B 토큰으로 서로의 메모에 접근하는 점검도 4단계 때와 같이 미실행입니다.
 
+## 6단계 현재 상태: 등록한 기기만 자료실에 들어옵니다
+
+- `src/decider.mjs`에 규칙 `device_registered`를 추가했습니다. `RULE_IDS`는 `['starter.deny', 'device_registered']`입니다.
+- 엔진이 보낸 요청의 `deviceRegistered`가 `true`이고 읽기(`GET`)면 `allow`(이유 코드 `approved`)입니다. `false`이거나 값이 없거나 `true`가 아닌 값이면 `deny`(이유 코드 `device_not_registered`)입니다. 등록 기기의 쓰기 요청은 기존 `starter.deny`로 거부합니다.
+- 요청 항목은 `docs/DECIDER_REQUEST.md` 계약에 있는 값만 씁니다. 브라우저가 보낸 기기 상태는 믿지 않습니다.
+- 이 과정에는 따로 설치할 접속 프로그램이 없습니다. 미등록 기기로 실제 접속하는 공격은 심판이 맡습니다.
+
+### 확인 순서
+
+1. 저장소 폴더에서 `npm run decider:test`를 실행합니다.
+2. 「통과 · 등록 기기의 정상 요청」이 보여야 합니다. 등록 기기(`deviceRegistered: true`)의 읽기 요청이 `allow`라는 뜻입니다.
+3. 「통과 · 미등록 기기의 가상 요청」이 보여야 합니다. `deviceRegistered: false`인 요청이 `deny`이고 이유 코드가 `device_not_registered`일 때만 통과로 나옵니다.
+4. 「확인 필요」가 한 줄이라도 나오거나 「판정기 연습 첫 오류」가 나오면 실패입니다.
+
+2026-10-13에 실행한 결과는 위 두 줄이 모두 「통과」였습니다. 같은 가상 요청으로 판정기 응답을 직접 출력하면 등록 기기는 `allow approved ["device_registered"]`, 미등록 기기는 `deny device_not_registered ["device_registered"]`였습니다. 이 연습은 가상 요청이며 심판의 판정이 아닙니다.
+
+### 아직 확인하지 못한 것
+
+- 허용 이유 코드 `approved`는 계약 문서의 예시에서 가져왔습니다. 운영 등록부의 `allowedReasonCodes`가 저장소에 없어서 등록 여부는 확인하지 못했습니다.
+- 실제 배포와 심판의 미등록 기기 점검은 실행하지 않았습니다(미실행).
+
+## 6단계 저장점
+
+- 저장점: 6단계 「등록한 기기만 자료실에 들어옵니다」.
+- 지금 작동하는 기능
+  1. 판정기는 등록 기기의 읽기 요청만 허용하고, 미등록·값 없는 기기는 `device_not_registered`로 거부합니다.
+  2. 5단계까지의 기능(서버 함수 로그인, 토큰·소유자 검사, DB 직접 권한 회수)은 그대로입니다.
+- 다시 실행하는 방법
+  - 판정기 연습: `npm run decider:test` (위 「확인 순서」)
+  - 시험: `npm run test:r5`, `npm run test:package`
+  - 제출 묶음: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 6으로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 5단계와 같고 구현과 일치합니다. `restoreRoute`와 `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/decider.mjs`의 `RULE_IDS`는 `starter.deny`(규칙에 맞지 않는 요청의 기본 거부)와 `device_registered` 두 개이며, 둘 다 실제로 쓰입니다.
+  - `src/attack-check.mjs`는 6단계에서도 5단계 점검 13건을 그대로 씁니다. 배포 주소로 보낼 수 있는 새 점검이 없고, 미등록 기기 접속은 심판이 점검합니다.
+
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
 - 대상: `xdr/fixtures/brute-force.json`의 연습 경보 28건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1110입니다.

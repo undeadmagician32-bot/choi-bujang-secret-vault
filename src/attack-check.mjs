@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 
-// 5단계 자기 점검: 배포된 주소와 원본 자료 API에 실제로 요청을 보내고, 받은 상태 코드만 기록합니다.
+// 5·6단계 자기 점검: 배포된 주소와 원본 자료 API에 실제로 요청을 보내고, 받은 상태 코드만 기록합니다.
 // 심판의 판정이 아닙니다. 토큰·키·메모 본문은 결과에 넣지 않습니다.
 // 위조 토큰은 매번 새로 만든 무작위 키로 서명한 가짜이며, 아무 비밀값도 쓰지 않습니다.
 // 로그인한 A·B 토큰이 필요한 타인 접근 점검은 토큰을 코드에 둘 수 없어서 여기에 없습니다(미실행).
@@ -19,7 +19,8 @@ function forgedToken(issuer) {
 }
 
 export async function runAttackChecks(config) {
-  if (config.step !== 5) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  // 6단계(등록 기기 규칙)는 배포 주소로 보낼 새 요청이 없어 5단계 점검을 그대로 씁니다. 미등록 기기 접속은 심판이 점검합니다.
+  if (config.step !== 5 && config.step !== 6) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   let app;
   try {
     app = new URL(config.publicAppUrl);
