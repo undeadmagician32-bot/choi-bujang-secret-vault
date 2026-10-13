@@ -110,18 +110,23 @@ export function renderReport(snap, results) {
   return lines.join('\n');
 }
 
-function parseArgs(argv) {
+// `--옵션 값`과 `--옵션=값` 두 꼴을 모두 받습니다. 모르는 옵션·값 없음·같은 옵션 두 번은 중단합니다.
+export function parseOptions(argv, allowed) {
   const opts = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i];
-    if (!['--snapshot', '--root', '--expect-version'].includes(key) || argv[i + 1] === undefined) abort(`알 수 없거나 값이 없는 옵션입니다: ${key}`);
-    opts[key.slice(2)] = argv[i + 1];
+  for (let i = 0; i < argv.length; i += 1) {
+    const eq = argv[i].indexOf('=');
+    const key = eq === -1 ? argv[i] : argv[i].slice(0, eq);
+    if (!allowed.includes(key)) abort(`알 수 없는 옵션입니다: ${key}`);
+    const value = eq === -1 ? argv[++i] : argv[i].slice(eq + 1);
+    if (value === undefined || value === '') abort(`값이 없는 옵션입니다: ${key}`);
+    if (key.slice(2) in opts) abort(`옵션이 두 번 나왔습니다: ${key}`);
+    opts[key.slice(2)] = value;
   }
   return opts;
 }
 
 export function run(argv) {
-  const opts = parseArgs(argv);
+  const opts = parseOptions(argv, ['--snapshot', '--root', '--expect-version']);
   const root = resolve(opts.root ?? fileURLToPath(new URL('..', import.meta.url)));
   const snap = loadSnapshot(resolve(opts.snapshot ?? join(root, 'backup', 'policy-snapshot.json')), opts['expect-version']);
   return renderReport(snap, comparePolicies(snap, root));

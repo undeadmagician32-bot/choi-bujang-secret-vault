@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  POLICY_FILES, PolicyDiffAbort, comparePolicies, loadSnapshot, renderReport, sha256,
+  POLICY_FILES, PolicyDiffAbort, comparePolicies, loadSnapshot, parseOptions, renderReport, sha256,
 } from './policy-diff.mjs';
 
 // 검증한 정책 사본의 버전으로 시험 정책 파일(POLICY_FILES 여섯 개)만 되돌립니다.
@@ -12,18 +12,6 @@ import {
 // - 바뀌기 전 내용은 backup/pre-restore/<시각>/ 아래에 남깁니다.
 export const AUDIT_FILE = 'backup/policy-restore-audit.log';
 const abort = (message) => { throw new PolicyDiffAbort(message); };
-
-function parseArgs(argv) {
-  const opts = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i];
-    if (!['--snapshot', '--root', '--expect-version', '--confirm'].includes(key) || argv[i + 1] === undefined) {
-      abort(`알 수 없거나 값이 없는 옵션입니다: ${key}`);
-    }
-    opts[key.slice(2)] = argv[i + 1];
-  }
-  return opts;
-}
 
 export function preview(snap, results) {
   const todo = results.filter((r) => r.status !== 'same');
@@ -79,7 +67,7 @@ function apply(snap, results, root) {
 }
 
 export function run(argv) {
-  const opts = parseArgs(argv);
+  const opts = parseOptions(argv, ['--snapshot', '--root', '--expect-version', '--confirm']);
   const root = resolve(opts.root ?? fileURLToPath(new URL('..', import.meta.url)));
   const snap = loadSnapshot(resolve(opts.snapshot ?? join(root, 'backup', 'policy-snapshot.json')), opts['expect-version']);
   const results = comparePolicies(snap, root);

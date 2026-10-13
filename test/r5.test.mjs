@@ -119,3 +119,18 @@ test('step 5 attack checks send unauthenticated and forged requests and record o
     globalThis.fetch = originalFetch;
   }
 });
+
+test('step 10 build identity carries restoreRoute and requires it to be an allowed route', () => {
+  const restoreRoute = 'POST /api/memos/restore/:id';
+  const step10 = { ...config, step: 10, allowedRoutes: [...config.allowedRoutes, restoreRoute], restoreRoute };
+  const identity = deploymentIdentity(env, step10);
+  assert.equal(identity.restoreRoute, restoreRoute);
+  assert.ok(identity.allowedRoutes.includes(restoreRoute));
+  // 경로만 적었거나, 메서드가 소문자이거나, allowedRoutes에 없거나, 쿼리가 있으면 빌드가 실패해야 합니다.
+  for (const bad of [undefined, null, '', '/api/memos/restore/:id', 'post /api/memos/restore/:id',
+    'POST /api/memos/restore/:id?x=1', 'POST /api/other/:id', 42]) {
+    assert.throws(() => deploymentIdentity(env, { ...step10, restoreRoute: bad }), /restoreRoute/u, String(bad));
+  }
+  // 9단계 이하에서는 aleph.json에 싣지 않습니다.
+  assert.equal('restoreRoute' in deploymentIdentity(env, { ...step10, step: 9 }), false);
+});

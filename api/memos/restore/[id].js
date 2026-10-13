@@ -1,37 +1,25 @@
-import { authorize, dbFailed, isUuid, memoContentSha256, methodNotAllowed } from '../../src/memo-api.mjs';
-import { markResource } from '../../src/resources.mjs';
+import { authorize, dbFailed, isUuid, memoContentSha256, methodNotAllowed } from '../../../src/memo-api.mjs';
+import { markResource } from '../../../src/resources.mjs';
 
-// POST /api/memos/restore : { id } → 200 { id, restored: true, contentSha256 }
-// 10단계: 비공개 사본(memos_backup)에서 로그인한 본인의 메모 한 건만 되살립니다.
-// - 사본은 서버 전용 키로만 읽고, 외부 경로는 없습니다. 사본·다른 메모·감사 기록은 쓰지 않습니다.
-// - 사본의 ID·소유자가 요청 ID·확인된 사용자와 같고, 저장된 내용 해시가 제목·본문에서 다시 계산한 값과
-//   같을 때만 씁니다. 쓴 뒤 다시 읽어 같은 해시인지 확인합니다.
-// - 남의 메모 ID와 사본이 없는 ID는 같은 404로 답합니다. owner_id는 확인된 사용자 ID로만 씁니다.
-function readId(rawBody) {
-  let body = rawBody;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { return { error: 'INVALID_BODY' }; }
-  }
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'INVALID_BODY' };
-  const keys = Object.keys(body);
-  if (keys.length !== 1 || keys[0] !== 'id') return { error: 'INVALID_BODY' };
-  if (!isUuid(body.id)) return { error: 'INVALID_ID' };
-  return { id: body.id.toLowerCase() };
-}
-
+// POST /api/memos/restore/:id → 200 { id, restored: true, contentSha256, contentHash }
+// 10단계: 비공개 사본(memos_backup)에서 로그인한 본인의 메모 한 건만 되살립니다. 본문은 읽지 않습니다.
+// 처리 순서: 로그인(401) → ID 형식(400) → 사본 읽기(없으면 404) → 사본 해시 다시 계산(다르면 409, 아무것도 쓰지 않음)
+// → 사본 주인 = 요청자(아니면 404) → 그 한 건만 되돌리기(지워졌으면 같은 ID로 다시 만들기)
+// → 다시 읽어 ID·주인·해시 대조(다르면 500) → 감사 기록 덧붙이기 → 200.
+// 사본의 주인은 쿼리에서 로그인으로 확인된 사용자 ID와 함께 거릅니다. 남의 메모와 사본 없는 ID는 같은 404입니다.
+// contentSha256과 contentHash는 같은 값입니다(수업 안내의 이름을 함께 씀).
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
     methodNotAllowed(response, 'POST');
     return;
   }
-  markResource(response, 'POST /api/memos/restore');
+  markResource(response, 'POST /api/memos/restore/:id');
   const session = await authorize(request, response);
   if (!session) return;
   const { userId, supabase } = session;
 
-  const parsed = readId(request.body);
-  if (parsed.error) { response.status(400).json({ error: parsed.error }); return; }
-  const { id } = parsed;
+  const id = typeof request.query?.id === 'string' ? request.query.id.toLowerCase() : '';
+  if (!isUuid(id)) { response.status(400).json({ error: 'INVALID_ID' }); return; }
 
   try {
     const { data: backup, error: readError } = await supabase.from('memos_backup')
@@ -75,8 +63,17 @@ export default async function handler(request, response) {
       response.status(500).json({ error: 'RESTORE_VERIFY_FAILED' });
       return;
     }
+
+    // 감사 기록은 덧붙이기만 합니다. 제목·본문은 적지 않고 ID·소유자·해시만 적습니다.
+    const { error: auditError } = await supabase.from('memos_restore_audit')
+      .insert({ memo_id: id, owner_id: userId, content_sha256: backup.content_sha256, outcome: 'restored' });
+    if (auditError) {
+      console.error('MEMO_RESTORE_AUDIT_FAILED', auditError.code ?? 'unknown');
+      response.status(500).json({ error: 'AUDIT_FAILED' });
+      return;
+    }
     console.info('MEMO_RESTORED');
-    response.status(200).json({ id, restored: true, contentSha256: backup.content_sha256 });
+    response.status(200).json({ id, restored: true, contentSha256: backup.content_sha256, contentHash: backup.content_sha256 });
   } catch {
     console.error('MEMO_RESTORE_REQUEST_FAILED');
     response.status(502).json({ error: 'MEMOS_UNAVAILABLE' });

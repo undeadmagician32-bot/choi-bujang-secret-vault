@@ -15,7 +15,10 @@
     "policy:diff:test": "node --test test/policy-diff.test.mjs",
     "policy:restore": "node scripts/policy-restore.mjs",
     "memo:restore:test": "node --test --experimental-test-module-mocks test/memo-restore.test.mjs",
-    "policy:restore:test":"node --test --experimental-test-module-mocks test/policy-restore.test.mjs"
+    "policy:restore:test": "node --test --experimental-test-module-mocks test/policy-restore.test.mjs",
+    "policy:snapshot": "node scripts/policy-snapshot.mjs",
+    "policy:snapshot:test": "node --test test/policy-snapshot.test.mjs",
+    "judge-owner:test": "node --test --experimental-test-module-mocks test/judge-owner.test.mjs"
   },
   "engines": {
     "node": ">=22"

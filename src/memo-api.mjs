@@ -16,6 +16,32 @@ let admin;
 export const memoContentSha256 = (title, body) => createHash('sha256')
   .update(Buffer.concat([Buffer.from(title, 'utf8'), Buffer.from([0]), Buffer.from(body, 'utf8')])).digest('hex');
 
+// 10단계: 심판 토큰은 같은 sub로 A·B 두 신원(identity 'a'/'b')을 쓸 수 있습니다. sub만 주인으로 쓰면 B가 A의 메모를
+// 자기 것으로 다룰 수 있어서, 심판 토큰이면 sub와 identity를 묶어 만든 고정 UUID를 주인 키로 씁니다.
+// 학생 토큰은 서버가 확인한 sub 그대로입니다. 브라우저가 보낸 값은 쓰지 않습니다.
+export function ownerKeyFor(verified) {
+  if (verified?.kind !== 'judge') return verified.userId;
+  const hex = createHash('sha256').update(`aleph-judge-owner\0${verified.userId}\0${verified.identity}`).digest('hex');
+  const variant = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+// 10단계: 메모를 새로 만들 때 비공개 사본을 덧붙입니다. 이미 사본이 있으면 건드리지 않아(on conflict do nothing)
+// 사본은 가장 이른 내용으로 남습니다. 사본 쓰기가 실패해도 메모 만들기는 실패시키지 않고 고정 코드만 남깁니다.
+export async function saveMemoBackup(supabase, { id, owner_id, title, body }) {
+  try {
+    const { error } = await supabase.from('memos_backup').upsert(
+      { id, owner_id, title, body, content_sha256: memoContentSha256(title, body) },
+      { onConflict: 'id', ignoreDuplicates: true },
+    );
+    if (error) { console.error('MEMO_BACKUP_FAILED', error.code ?? 'unknown'); return false; }
+    return true;
+  } catch {
+    console.error('MEMO_BACKUP_FAILED', 'unknown');
+    return false;
+  }
+}
+
 export const isUuid =(value) => typeof value === 'string' && UUID.test(value);
 
 // 통과하면 { userId, supabase }를 돌려주고, 거부하면 응답을 이미 보낸 뒤 null을 돌려줍니다.
@@ -43,7 +69,7 @@ export async function authorize(request, response) {
     return null;
   }
   admin ??= createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  return { userId: verified.userId, supabase: admin };
+  return { userId: ownerKeyFor(verified), supabase: admin };
 }
 
 export function methodNotAllowed(response, allow) {

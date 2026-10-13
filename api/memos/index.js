@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { authorize, dbFailed, methodNotAllowed, readMemoInput } from '../../src/memo-api.mjs';
+import { authorize, dbFailed, methodNotAllowed, readMemoInput, saveMemoBackup } from '../../src/memo-api.mjs';
 import { markResource } from '../../src/resources.mjs';
 
 // GET /api/memos  : 로그인한 사용자의 메모 목록
@@ -31,6 +31,8 @@ export default async function handler(request, response) {
       .insert({ id, owner_id: userId, title: parsed.value.title, body: parsed.value.body });
     if (error?.code === '23505') { response.status(409).json({ error: 'ID_EXISTS' }); return; }
     if (error) { dbFailed(response, 'MEMOS_CREATE_FAILED', error); return; }
+    // 10단계: 새 메모의 비공개 사본을 남깁니다(실패해도 메모는 만들어지고 고정 코드만 로그에 남습니다).
+    await saveMemoBackup(supabase, { id, owner_id: userId, title: parsed.value.title, body: parsed.value.body });
     response.status(201).json({ id });
   } catch {
     console.error('MEMOS_REQUEST_FAILED');
