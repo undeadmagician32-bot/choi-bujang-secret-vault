@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from './verify-login.mjs';
@@ -12,11 +11,7 @@ export const BODY_MAX = 5000;
 let verifier;
 let admin;
 
-// 10단계: 사본 대조용 내용 해시. sha256(제목 || 0x00 || 본문), 소문자 16진수. docs/MEMOS_BACKUP.sql과 같은 계산입니다.
-export const memoContentSha256 = (title, body) => createHash('sha256')
-  .update(Buffer.concat([Buffer.from(title, 'utf8'), Buffer.from([0]), Buffer.from(body, 'utf8')])).digest('hex');
-
-export const isUuid =(value) => typeof value === 'string' && UUID.test(value);
+export const isUuid = (value) => typeof value === 'string' && UUID.test(value);
 
 // 통과하면 { userId, supabase }를 돌려주고, 거부하면 응답을 이미 보낸 뒤 null을 돌려줍니다.
 export async function authorize(request, response) {

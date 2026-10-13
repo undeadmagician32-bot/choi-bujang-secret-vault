@@ -7,5 +7,3 @@ public/aleph.json
 # respond.mjs 실행 결과(실행마다 달라져서 커밋하지 않음)
 xdr/alerts.log
 xdr/*/deny-rules.json
-# 정책 되돌리기 전 내용(침해된 파일일 수 있어 커밋하지 않음). 감사 기록은 커밋 대상
-backup/pre-restore/

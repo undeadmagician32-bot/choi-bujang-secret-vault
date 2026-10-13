@@ -1,5 +1,5 @@
 {
-  "step": 10,
+  "step": 9,
   "repoUrl": "https://github.com/undeadmagician32-bot/choi-bujang-secret-vault",
   "publicAppUrl": "https://choi-bujang-secret-vault-yaf3.vercel.app",
   "sampleMarker": "SAMPLE_NOTE_1",
@@ -14,9 +14,8 @@
     "POST /api/memos",
     "GET /api/memos/:id",
     "PUT /api/memos/:id",
-    "DELETE /api/memos/:id",
-    "POST /api/memos/restore"
+    "DELETE /api/memos/:id"
   ],
   "originalApiUrl": "https://vfsfpmggzswszqljxznx.supabase.co/rest/v1/memos",
-  "restoreRoute": "POST /api/memos/restore"
+  "restoreRoute": null
 }

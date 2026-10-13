@@ -19,8 +19,8 @@ function forgedToken(issuer) {
 }
 
 export async function runAttackChecks(config) {
-  // 6·7·8·9·10단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지·백업 복원)는 5단계 점검을 그대로 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수·복원 경로는 심판이 점검합니다.
-  if (![5, 6, 7, 8, 9, 10].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  // 6·7·8·9단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지)는 5단계 점검을 그대로 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수는 심판이 점검합니다.
+  if (![5, 6, 7, 8, 9].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   let app;
   try {
     app = new URL(config.publicAppUrl);
