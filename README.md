@@ -374,7 +374,7 @@
 
 ## 10단계 현재 상태: 백업에서 자료실을 되살립니다
 
-저장점은 아래 「10단계 저장점」입니다. 배포 확인과 아래 SQL 실행은 하지 않았습니다(미실행).
+저장점은 아래 「10단계 저장점」입니다. Supabase SQL은 학생이 2026-10-13에 실행했습니다(아래 「아직 확인하지 못한 것」). 배포 확인은 학생이 정상이라고 알려 왔고, 어떤 항목을 봤는지는 듣지 못했습니다. 복원 요청의 실제 배포 시험과 복구 뒤 1~9단계 재확인은 미실행입니다.
 
 ### 서비스와 경로
 
@@ -396,7 +396,7 @@
 
 1. `npm run memo:restore:test`: pass 10. 시험 계정 B의 가상 메모 한 건만 복원합니다(B 메모 수정 뒤 복원, 지워진 B 메모 복원, 새로 만든 B 메모의 사본 덧붙이기). 복원마다 감사 기록이 한 줄 늘고 사본 해시가 틀리면 409입니다. A의 메모 ID는 「B가 요청하면 거부되는지」 확인에만 쓰고 복원하지 않습니다. 가짜 로그인·가짜 DB이며 실제 Supabase나 배포에는 요청하지 않습니다.
 2. `npm run judge-owner:test`(pass 3), `npm run policy:snapshot:test`(pass 6), `npm run policy:diff:test`(pass 5), `npm run policy:restore:test`(pass 4), `npm run test:r5`(pass 3), `npm run test:package`(pass 3).
-3. 배포 뒤(미실행): SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 1·2번을 실행하고 3번 확인에서 `hash_mismatch`가 0인지, 사본·감사 테이블의 권한이 service_role의 SELECT·INSERT만 true인지 봅니다. `/aleph.json`에 `restoreRoute`가 보이는지 먼저 확인합니다. 로그인 없이 `POST /api/memos/restore/<ID>`는 401이어야 합니다. B로 로그인해 B 메모 하나를 만들고 고친 뒤 개발자 도구 콘솔에서 `/api/memos/restore/<그 ID>`를 POST하면 200이고, 다시 읽은 메모가 처음 사본 내용이며 응답의 `contentHash`가 사본과 같아야 합니다. A 메모 ID로 보내면 404여야 합니다.
+3. 배포 뒤(SQL 1~3번은 학생이 실행했고 나머지는 미실행): SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 1·2번을 실행하고 3번 확인에서 `hash_mismatch`가 0인지, 사본·감사 테이블의 권한이 service_role의 SELECT·INSERT만 true인지 봅니다. `/aleph.json`에 `restoreRoute`가 보이는지 먼저 확인합니다. 로그인 없이 `POST /api/memos/restore/<ID>`는 401이어야 합니다. B로 로그인해 B 메모 하나를 만들고 고친 뒤 개발자 도구 콘솔에서 `/api/memos/restore/<그 ID>`를 POST하면 200이고, 다시 읽은 메모가 처음 사본 내용이며 응답의 `contentHash`가 사본과 같아야 합니다. A 메모 ID로 보내면 404여야 합니다.
 
 ### 복구 뒤 1~9단계 다시 확인하는 순서
 
@@ -413,7 +413,7 @@
 | 확인 | 명령·방법 | 돌아왔을 때 | 실패 | 복구 뒤 결과 |
 |---|---|---|---|---|
 | 정책 | `npm run policy:diff` | 「변경 범위: 변경 0개, 현재 없음 0개」 | 파일이 하나라도 나오거나 「중단」 | 미실행 |
-| 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 | 미실행 |
+| 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 | 2026-10-13 SQL 3번(학생 실행): `backups` 3, `hash_mismatch` 0(캡처로 확인). 권한(service_role의 SELECT·INSERT만 true)과 `rls_on`은 학생이 정상이라고 알려 왔고 결과 표는 보지 못함. 복원 뒤 재확인은 미실행 |
 | 복원한 메모 | B로 로그인해 `GET /api/memos/<ID>` | 사본과 같은 제목·본문, 응답 200 | 404, 내용이 다름 | 미실행 |
 | 다른 메모 | A로 로그인해 메모 목록 | 복구 전과 같은 건수·제목 | 줄거나 바뀜 | 미실행 |
 
@@ -442,7 +442,7 @@
 
 ### 아직 확인하지 못한 것
 
-- 실제 Supabase에서 SQL과 복원 요청을 실행하지 않았습니다(미실행). SQL의 해시 계산이 `memoContentSha256`과 같은 값을 내는지는 실제 Postgres에서 확인하지 않았습니다(위 3번의 `hash_mismatch`와 복원 200으로 확인).
+- Supabase SQL 1·2·3번은 학생이 2026-10-13에 실행했습니다: 1·2번 성공, 3번 `backups` 3·`hash_mismatch` 0(캡처로 확인). 사본·감사 테이블의 권한(service_role의 SELECT·INSERT만 true)과 `rls_on`은 학생이 알려 왔고 저는 결과 표를 보지 못했습니다. 이 `hash_mismatch` 0은 SQL이 만든 해시를 SQL이 다시 계산해 비교한 것이라, 서버 코드(`memoContentSha256`)와 같은 값인지는 실제 복원 요청이 200이 되어야 확인됩니다. 복원 요청은 실제 배포에서 하지 않았습니다(미실행).
 - 배포된 `/aleph.json`에 `restoreRoute`가 보이는지는 새 배포가 끝나야 확인할 수 있습니다(미실행). 심판이 이 값을 어떻게 읽는지는 저장소 안에 설명이 없어, 수업 안내와 다른 학생의 경험을 따라 `"METHOD /경로/:id"` 꼴로 적었습니다.
 - 사본은 SQL을 실행한 뒤 새로 만든 메모부터 자동으로 덧붙습니다. 그 전에 있던 메모는 SQL 2번으로 일괄 사본을 떠야 하며, 사본이 없는 메모를 요청하면 404입니다. 사본을 쓰지 못해도 메모 만들기는 성공하고 고정 코드(`MEMO_BACKUP_FAILED`)만 남습니다.
 - 감사 기록을 덧붙이지 못하면(테이블 없음 등) 메모는 이미 되살아난 뒤라도 500 `AUDIT_FAILED`를 돌려줍니다.
@@ -464,7 +464,7 @@
   - `step` 10, `allowedRoutes`와 `restoreRoute`는 모두 `POST /api/memos/restore/:id`이고 `api/memos/restore/[id].js`, `src/resources.mjs`와 일치합니다. `scripts/deployment-identity.mjs`가 10단계부터 `restoreRoute`를 `aleph.json`에 싣습니다. `identityProvider`, `originalApiUrl`, `judgeIssuer`는 바꾸지 않았습니다.
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
   - `src/attack-check.mjs`는 5단계 점검 13건 그대로이고 허용 단계 목록에 10이 들어 있습니다(점검 내용은 그대로). 복원 경로 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
-- 하지 않은 것: 실제 Supabase SQL 실행, 배포 확인, 복구 뒤 1~9단계 재확인(위 표의 결과 칸은 모두 미실행), 정책 사본 파일(`backup/policy-snapshot.json`) 만들기.
+- 하지 않은 것: 복원 요청의 실제 배포 시험, 복구 뒤 1~9단계 재확인(위 표의 나머지 결과 칸은 미실행), 정책 사본 파일(`backup/policy-snapshot.json`) 만들기. Supabase SQL 1·2·3번은 학생이 실행했습니다(위 「아직 확인하지 못한 것」).
 
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
