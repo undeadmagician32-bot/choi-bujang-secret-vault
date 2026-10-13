@@ -521,6 +521,23 @@
   - 확신도 가중치·단서 상한 0.8·규칙 만료 1시간은 MITRE에 없는 연습용 값이고 이 연습 경보에 맞춰 정했습니다. MITRE 근거는 온라인으로 대조하지 않았습니다. 심판의 판정이 아닙니다.
   - `npm run bundle`은 실행하지 않았습니다(미실행).
 
+## 보너스 xdr-05 저장점: 권한 가로채기 탐지
+
+- 대상: `xdr/fixtures/privilege.json`의 연습 경보 26건(수업용 가상 Wazuh 모양). 근거는 MITRE ATT&CK T1068(권한 상승 악용), T1078(정상 계정 도용)이고, 신호는 관리자 그룹 추가, 처음 보는 관리자 명령, 업무 시간 밖 권한 사용입니다. 연습 경보의 시각은 모두 09~15시라서 업무 시간 밖인지는 설명 문장으로 봅니다. 관리자 그룹 추가는 MITRE에서 T1098.007로 더 좁게 분류되지만 이번 근거 범위에 맞춰 `patterns.json` 메모에만 적었습니다.
+- 지금 작동하는 기능
+  1. `xdr/privilege/decide.mjs`: `decide(alert)`가 `{action, confidence, reason}`을 돌려줍니다. 확신도 0.85 이상 block, 0.5 이상 alert, 그 아래 record입니다. import 문이 없고 파일을 읽거나 쓰지 않습니다. 패턴 세 개는 `patterns.json`과 같은 내용을 파일 맨 위 상수로 가집니다. 패턴의 중심 조건에 받침 신호(처음 보는 주소·여러 계정·다시 들어옴·방금 관리자가 됨·다른 계정 권한) 하나 이상이 붙을 때만 block이고, 관리자 명령·권한 상승·그룹 단서만 있으면 규칙 수준 4 이상에서 alert(최대 0.8)입니다. 관리자 그룹이 아닌 그룹 추가와 실패한 관리자 명령은 block하지 않습니다.
+  2. `xdr/privilege/read-alerts.mjs`: 확인용 읽기 모듈입니다. 시각·출발 주소·계정·규칙 수준·설명만 뽑고 비밀값처럼 보이는 문자열은 가립니다. `decide.mjs`는 불러오지 않습니다.
+  3. `xdr/privilege/respond.mjs`: block 결과만 출발 주소 기준의 거부 규칙(만료 시각·근거 경보 번호 포함)으로 `xdr/privilege/deny-rules.json`에 저장하고, 알림을 `xdr/alerts.log`에 한 줄씩 쌓습니다. 계정은 권한을 빼앗긴 정상 사용자일 수 있어서 막지 않고, 정상 이벤트와 주소가 겹치거나 막을 수 없는 주소는 규칙을 만들지 않습니다. `src/decider.mjs`에는 연결하지 않았습니다.
+- 다시 실행하는 방법
+  - 판정 결과: `npm run xdr:run -- privilege` (`xdr/privilege/result.json` 갱신)
+  - 읽기 확인: `node xdr/privilege/read-alerts.mjs` (경보 건수와 뽑은 줄 수가 같아야 함)
+  - 규칙·알림 만들기: `node xdr/privilege/respond.mjs` (`deny-rules.json`, `alerts.log`는 실행마다 달라져서 커밋하지 않음)
+- 확인한 것: 위 `npm run xdr:run` 결과가 block 9, alert 8, record 9였고, 정상 후보(규칙 수준 3 이하) 9건은 모두 record였습니다. 읽기 모듈은 경보 26건과 뽑은 줄 26줄이 같았습니다. `respond.mjs`는 임시 폴더에서 같은 경보를 다시 흘려 block 경보 9건(주소 8개)만 막히고 나머지 17건은 통과하며, 만료 뒤에는 막히지 않는 것을 확인했습니다.
+- 하지 않은 것
+  - 거부 규칙은 `src/decider.mjs`에 연결하지 않았습니다. 판정기 기존 규칙을 고치지 않았고, 실제 접속 차단이라고 보지 않습니다.
+  - 확신도 가중치·단서 상한 0.8·규칙 만료 1시간은 MITRE에 없는 연습용 값이고 이 연습 경보에 맞춰 정했습니다. MITRE 근거는 온라인으로 대조하지 않았습니다. 심판의 판정이 아닙니다.
+  - `npm run bundle`은 실행하지 않았습니다(미실행).
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포하고 `X-Content-Type-Options: nosniff` 머리글을 붙입니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.
