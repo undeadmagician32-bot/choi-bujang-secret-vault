@@ -412,7 +412,7 @@
 
 | 확인 | 명령·방법 | 돌아왔을 때 | 실패 | 복구 뒤 결과 |
 |---|---|---|---|---|
-| 정책 | `npm run policy:diff` | 「변경 범위: 변경 0개, 현재 없음 0개」 | 파일이 하나라도 나오거나 「중단」 | 미실행 |
+| 정책 | `npm run policy:diff` | 「변경 범위: 변경 0개, 현재 없음 0개」 | 파일이 하나라도 나오거나 「중단」 | 2026-10-13 20:43경 정책 사본(버전 `816d0bd`)을 만든 직후 실행: 「변경 범위: 변경 0개, 현재 없음 0개, 같음 6개」. 사본을 방금 만든 것이라 이 0개는 사본 시점과 지금이 같다는 뜻이고, 침해 뒤 정책이 돌아왔는지를 확인한 것은 아님 |
 | 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 | 2026-10-13 SQL 3번(학생 실행): `backups` 3, `hash_mismatch` 0(캡처로 확인). 권한(service_role의 SELECT·INSERT만 true)과 `rls_on`은 학생이 정상이라고 알려 왔고 결과 표는 보지 못함. 복원 뒤 재확인은 미실행 |
 | 복원한 메모 | B로 로그인해 `GET /api/memos/<ID>` | 사본과 같은 제목·본문, 응답 200 | 404, 내용이 다름 | 2026-10-13 배포에서 같은 메모에 복원 요청 2회(감사 기록 11:11·11:12 UTC): 콘솔 캡처에 보인 응답은 HTTP 200, `restored: true`, `contentSha256`과 `contentHash`가 같은 값(학생 콘솔 캡처, 로그인한 시험 계정, 메모 한 건). 복원 뒤 `GET /api/memos/<ID>`로 내용을 다시 읽어 사본과 대조하는 일, 복원 전후 내용이 달라졌는지는 확인하지 못함(미실행) |
 | 다른 메모 | A로 로그인해 메모 목록 | 복구 전과 같은 건수·제목 | 줄거나 바뀜 | 미실행 |
@@ -421,16 +421,16 @@
 
 | 단계 | 정상 요청 (계속 되어야 함) | 금지 요청 (다시 거부되어야 함) | 명령·방법 | 복구 뒤 결과 |
 |---|---|---|---|---|
-| 1~2 | 비로그인 `/` 200, 로그인 폼만 보임 | 비로그인 `/data.json` 404, `/`와 `/aleph.json`에 메모 문장 없음 | 배포: 시크릿 창과 「가상 메모 문장 검색 확인」 | 미실행 |
-| 3 | A 로그인 뒤 `/api/notes` 200 | 비로그인·위조 토큰으로 `/api/notes`, `/api/memos` 401 | 배포: `npm run bundle`의 직접 점검(정상 요청은 화면에서 로그인) | 미실행 |
+| 1~2 | 비로그인 `/` 200, 로그인 폼만 보임 | 비로그인 `/data.json` 404, `/`와 `/aleph.json`에 메모 문장 없음 | 배포: 시크릿 창과 「가상 메모 문장 검색 확인」 | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): `/data.json` 404·확인 표시 없음, `/` HTTP 200·보안 머리글 있음, 화면 코드에 키로 보이는 문자열 없음. `/aleph.json`은 필드 목록(schema, step, repoUrl, commit, publicAppUrl, judgeIssuer, sampleMarker, allowedRoutes, originalApiUrl, restoreRoute)만 확인했고 메모 문장 검색은 미실행 |
+| 3 | A 로그인 뒤 `/api/notes` 200 | 비로그인·위조 토큰으로 `/api/notes`, `/api/memos` 401 | 배포: `npm run bundle`의 직접 점검(정상 요청은 화면에서 로그인) | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): 비로그인 읽기·추가·수정·삭제·알려진 ID 읽기·소유자 변경과 위조 토큰 2건, 모두 HTTP 401(9건). A 로그인 정상 요청(`/api/notes` 200)은 미실행 |
 | 4 | A가 자기 메모 읽기·수정 200 | B가 A 메모 읽기·수정·삭제 404, 본문으로 소유자 바꾸기 403 | 배포: 화면 로그인 뒤 개발자 도구 콘솔 `fetch` | 미실행 |
-| 5 | 화면이 `/api/memos`로 메모를 읽음 | 공개 키로 `originalApiUrl` 직접 요청 401, 첫 화면 코드에 키 없음 | 배포: `npm run bundle`의 직접 점검 | 미실행 |
-| 6 | 등록 기기 읽기 `allow` | 미등록 기기 `deny device_not_registered` | 로컬: `npm run decider:test` | 미실행 |
-| 7 | 정상 사건 `allow` | 복합 이상 사건 `step_up` | 로컬: `npm run decider:test`, `npm run fixture:7` | 미실행 |
-| 8 | A 메모 응답의 `X-Resource-Id: vault.memo` | 학생 공지 수정 403, 비로그인 공지 수정 401, 구역 밖 경로 `route_not_allowed` | 배포: 네트워크 탭과 콘솔 `fetch`. 판정기 쪽은 로컬 `npm run decider:test` | 미실행 |
-| 9 | 정상 조회 30건·정확히 120건 `observe` | 10분 안 121건·200건 회수 제안 | 로컬: `npm run detect:test` | 미실행 |
-| 10 | B가 자기 메모 복원 200 | B가 A 메모 ID로 복원 404, 사본 해시가 틀리면 409 | 로컬: `npm run memo:restore:test`. 배포: 콘솔 `fetch` | 2026-10-13 배포에서 같은 메모에 복원 요청 2회(감사 기록 11:11·11:12 UTC): 콘솔 캡처에 보인 응답은 HTTP 200, `restored: true`, `contentSha256`과 `contentHash`가 같은 값(학생 콘솔 캡처, 로그인한 시험 계정, 메모 한 건)(정상 요청). 금지 요청은 비로그인 401, 남의 메모 ID 404가 맞게 나왔다고 학생이 알려 옴(응답 캡처는 보지 못함), 사본 해시 409는 미실행. 로컬 `memo:restore:test`는 복구 뒤 결과가 아님 |
-| 공통 | 위 시험이 그대로 통과 | — | 로컬: `npm run test:r5`, `npm run test:package`, `npm run policy:diff:test`, `npm run policy:restore:test` | 미실행 |
+| 5 | 화면이 `/api/memos`로 메모를 읽음 | 공개 키로 `originalApiUrl` 직접 요청 401, 첫 화면 코드에 키 없음 | 배포: `npm run bundle`의 직접 점검 | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): 공개 키로 `originalApiUrl` 직접 요청 HTTP 401, 첫 화면 코드에 키 없음. 정상 요청은 학생의 네트워크 탭 캡처(2026-10-13)에서 `/api/memos` 응답에 메모 목록(id·title·body)이 보인 것을 확인 |
+| 6 | 등록 기기 읽기 `allow` | 미등록 기기 `deny device_not_registered` | 로컬: `npm run decider:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `decider:test` 「통과」 네 줄(등록 기기 정상 요청, 미등록 기기 등). 실제 기기 접속은 미실행 |
+| 7 | 정상 사건 `allow` | 복합 이상 사건 `step_up` | 로컬: `npm run decider:test`, `npm run fixture:7` | 2026-10-13 20:43(한국 시각) 로컬 실행: `fixture:7` 정상 사건 `allow`·복합 이상 사건 `step_up`, `decider:test` 통과 4줄. 실제 추가 확인 흐름은 미실행 |
+| 8 | A 메모 응답의 `X-Resource-Id: vault.memo` | 학생 공지 수정 403, 비로그인 공지 수정 401, 구역 밖 경로 `route_not_allowed` | 배포: 네트워크 탭과 콘솔 `fetch`. 판정기 쪽은 로컬 `npm run decider:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `decider:contract:test` pass 3(가상 요청 33가지, 공지 수정은 `instructor_not_verified`로 deny). 배포의 `X-Resource-Id`, 학생 공지 수정 403, 비로그인 공지 수정 401은 미실행 |
+| 9 | 정상 조회 30건·정확히 120건 `observe` | 10분 안 121건·200건 회수 제안 | 로컬: `npm run detect:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `detect:test` 「통과」 여섯 줄(정상 30건·정확히 120건 `observe`, 121건·200건 회수 제안). 실제 접속 회수는 미실행 |
+| 10 | B가 자기 메모 복원 200 | B가 A 메모 ID로 복원 404, 사본 해시가 틀리면 409 | 로컬: `npm run memo:restore:test`. 배포: 콘솔 `fetch` | 2026-10-13 배포에서 같은 메모에 복원 요청 2회(감사 기록 11:11·11:12 UTC): 콘솔 캡처에 보인 응답은 HTTP 200, `restored: true`, `contentSha256`과 `contentHash`가 같은 값(학생 콘솔 캡처, 로그인한 시험 계정, 메모 한 건)(정상 요청). 금지 요청은 비로그인 401, 남의 메모 ID 404가 맞게 나왔다고 학생이 알려 옴(응답 캡처는 보지 못함), 사본 해시 409는 미실행. 2026-10-13 20:43(한국 시각) 로컬 실행: `memo:restore:test` pass 10(가짜 DB) |
+| 공통 | 위 시험이 그대로 통과 | — | 로컬: `npm run test:r5`, `npm run test:package`, `npm run policy:diff:test`, `npm run policy:restore:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `test:r5` pass 3, `test:package` pass 3, `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6(모두 fail 0). 추가로 `memo:restore:test` pass 10, `judge-owner:test` pass 3, `decider:contract:test` pass 3 |
 
 - 로컬 명령 정상 결과: `decider:test` 「통과」 네 줄, `fixture:7` 「정상 사건: allow」·「복합 이상 사건: step_up」, `detect:test` 「통과」 여섯 줄, `memo:restore:test` pass 10, `test:r5` pass 3, `test:package` pass 3, `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6, `judge-owner:test` pass 3. 「확인 필요」나 「첫 오류」가 한 줄이라도 나오면 실패입니다.
 - `npm run bundle`은 커밋되지 않은 파일이 있으면 멈춥니다. 복구한 파일을 커밋한 뒤 실행합니다. 직접 점검 결과는 학생 자기 점검이며 심판의 판정이 아닙니다.
@@ -447,7 +447,7 @@
 - 사본은 SQL을 실행한 뒤 새로 만든 메모부터 자동으로 덧붙습니다. 그 전에 있던 메모는 SQL 2번으로 일괄 사본을 떠야 하며, 사본이 없는 메모를 요청하면 404입니다. 사본을 쓰지 못해도 메모 만들기는 성공하고 고정 코드(`MEMO_BACKUP_FAILED`)만 남습니다.
 - 감사 기록을 덧붙이지 못하면(테이블 없음 등) 메모는 이미 되살아난 뒤라도 500 `AUDIT_FAILED`를 돌려줍니다.
 - 심판 토큰의 주인 구분: `src/verify-login.mjs`는 심판 토큰에서 `identity`(a/b)를 돌려주지만 예전 `authorize`는 `userId`(sub)만 써서, 심판이 A·B에 같은 `sub`를 쓰면 B가 A의 메모를 자기 것으로 다룰 수 있었습니다(심판이 같은 `sub`를 쓰는지는 이 저장소만으로는 확인하지 못했고, 수업 팁을 따라 대비했습니다). 이제 `src/memo-api.mjs`의 `ownerKeyFor`가 심판 토큰이면 `sub`와 `identity`를 묶어 만든 고정 UUID를 주인 키로 쓰고, 학생 토큰은 확인된 `sub` 그대로입니다. 4단계 메모 경로와 복원 경로가 모두 이 키를 `owner_id`로 씁니다. 이전 실행에서 심판 토큰의 `sub`로 저장된 메모는 새 키로는 보이지 않습니다. `api/notes.js`의 강사 역할 확인은 바꾸지 않았습니다. 가짜 검증기 시험만 했고 실제 심판 토큰으로는 미실행입니다.
-- 검증한 안전 정책 사본(`backup/policy-snapshot.json`)은 만들지 않았습니다. 지금 `npm run policy:diff`와 `npm run policy:restore`는 「사본 없음」으로 중단합니다. 침해 전에 `npm run policy:snapshot`으로 만들고 커밋해야 합니다.
+- 정책 사본(`backup/policy-snapshot.json`)은 2026-10-13 11:43 UTC에 버전 `816d0bd`로 만들었습니다. 현재 시험을 통과한 정책 파일 여섯 개를 「검증한 안전 정책」으로 정한 것이고, 침해 전에 따로 확인해 둔 사본은 아닙니다. 사본 파일 자체의 변조는 `--expect-version 816d0bd`로만 알 수 있습니다.
 
 ## 10단계 저장점
 
@@ -464,7 +464,7 @@
   - `step` 10, `allowedRoutes`와 `restoreRoute`는 모두 `POST /api/memos/restore/:id`이고 `api/memos/restore/[id].js`, `src/resources.mjs`와 일치합니다. `scripts/deployment-identity.mjs`가 10단계부터 `restoreRoute`를 `aleph.json`에 싣습니다. `identityProvider`, `originalApiUrl`, `judgeIssuer`는 바꾸지 않았습니다.
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
   - `src/attack-check.mjs`는 5단계 점검 13건 그대로이고 허용 단계 목록에 10이 들어 있습니다(점검 내용은 그대로). 복원 경로 점검은 새 배포가 끝나야 의미가 있어 넣지 않았습니다(미실행).
-- 하지 않은 것: 사본 해시 409의 배포 시험, 복원 전후 내용 비교, 복구 뒤 1~9단계 재확인(위 표의 나머지 결과 칸은 미실행), 정책 사본 파일(`backup/policy-snapshot.json`) 만들기. Supabase SQL, 복원 요청(200), 감사 기록 조회, 비로그인 401·남의 메모 404는 학생이 실행·보고했습니다(위 「아직 확인하지 못한 것」).
+- 하지 않은 것: 사본 해시 409의 배포 시험, 복원 전후 내용 비교, 복구 뒤 1~9단계 재확인 중 로그인 토큰이 필요한 칸(A 로그인 정상 요청, B의 남의 메모 요청, 공지 수정 403·401, 다른 메모 목록)은 미실행. Supabase SQL, 복원 요청(200), 감사 기록 조회, 비로그인 401·남의 메모 404는 학생이 실행·보고했습니다(위 「아직 확인하지 못한 것」).
 
 ## 보너스 xdr-01 저장점: 무차별 로그인 공격 탐지
 
