@@ -6,10 +6,10 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 // 로그인한 A·B 토큰이 필요한 타인 접근 점검은 토큰을 코드에 둘 수 없어서 여기에 없습니다(미실행).
 const KNOWN_MEMO_ID = 'b0b0b0b0-0000-4000-8000-000000000001'; // B의 공개 가능한 시험 메모 id
 // 화면 코드(public/index.html)에도 있는 공개용 publishable key입니다. 비밀 키가 아닙니다.
-const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
+export const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
-function forgedToken(issuer) {
+export function forgedToken(issuer) {
   const now = Math.floor(Date.now() / 1000);
   const head = b64({ alg: 'HS256', typ: 'JWT' });
   const body = b64({ iss: issuer, aud: 'authenticated', role: 'authenticated',
@@ -19,8 +19,8 @@ function forgedToken(issuer) {
 }
 
 export async function runAttackChecks(config) {
-  // 6~11단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지·복원·기기 승인)는 5단계 점검에 10단계 복원 경로와 11단계 기기 승인 경로 점검을 더해 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수는 심판이 점검합니다.
-  if (![5, 6, 7, 8, 9, 10, 11].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  // 6~12단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지·복원·기기 승인)는 5단계 점검에 10단계 복원 경로와 11단계 기기 승인 경로 점검을 더해 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수는 심판이 점검합니다.
+  if (![5, 6, 7, 8, 9, 10, 11, 12].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   let app;
   try {
     app = new URL(config.publicAppUrl);

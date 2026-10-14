@@ -473,6 +473,101 @@
   - `step`을 11로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`는 10단계와 같고 구현과 일치합니다. `judgeIssuer`는 바꾸지 않았습니다.
   - `src/attack-check.mjs`에 `anonymous_device_status`, `anonymous_device_request`(로그인 없이 `/api/device`에 보내면 401)를 더해 16건입니다. 승인 전 자료 거부(403)는 로그인한 계정이 필요해 이 점검에 없고, 2026-10-14 학생이 직접 확인했습니다(위 「아직 확인하지 못한 것」). `npm run bundle`은 같은 날 배포 뒤 다시 실행해 16건이 모두 기대대로 거부되었습니다(커밋 `6fbc888`).
 
+## 12단계 설치·실행·중지·복구 안내
+
+### 기준과 출처
+
+- **기준 커밋**: 「12단계 저장점」 커밋(`git log -1`로 확인). 그 바로 앞 커밋 `7ea7141`(11단계) 위에 12단계 제작 1(탈환 작전실 `api/ops/summary.js`, `src/ops-summary.mjs`)·제작 2(확인표 `src/matrix.mjs`, `scripts/matrix-run.mjs`)·제작 3(이 안내)을 더한 것입니다. 아래 로컬 명령은 2026-10-14에 이 내용으로 실행했고, 배포·새 Vercel 프로젝트에서 처음부터 다시 따라 한 시험은 **미실행**입니다.
+- **엔진 출처**: ALEPH SDP 엔진 사용. 요청의 신원·기기·경로를 확인해 판정기에 넘기고, 재인증과 접속 회수를 집행하고, 운영 등록부(`allowedReasonCodes`)와 심판 접수 서버(`judgeIssuer`)를 갖는 반 엔진은 수업에서 제공한 것입니다. **이 저장소에 엔진 코드는 없고 학생이 만들지 않았습니다.** 엔진과의 실제 연결은 이 저장소에서 시험하지 않았고, 아래 학생 몫은 엔진이 확인해 넘긴다고 약속한 요청·사건 계약(`docs/DECIDER_REQUEST.md`, `docs/DETECT_EVENTS.md`)에 맞춘 코드입니다.
+
+| 구분 | 내용 | 파일 |
+|---|---|---|
+| ALEPH SDP 엔진(제공, 저장소 밖) | 신원·기기·경로 확인, 판정기 호출, 재인증, 접속 회수 집행, 운영 등록부, 심판 접수 | 없음 (계약 문서만 저장소에 있음) |
+| 시작 틀(제공, 첫 커밋 `8e3e791`에 있던 것) | 판정기·탐지 함수의 빈 뼈대와 계약 문서, 로컬 연습 스크립트, 로그인 토큰 검사 도우미, 제출 묶음 스크립트, 배포 정보 기록, 패키지 양식, 연습 경보 자료 | `docs/DECIDER_REQUEST.md`, `docs/DETECT_EVENTS.md`, `scripts/decider-test.mjs`, `scripts/fixture-7.mjs`, `scripts/detect-test.mjs`, `scripts/bundle.mjs`, `scripts/deployment-identity.mjs`, `scripts/xdr-run.mjs`, `src/verify-login.mjs`, `package/`, `xdr/fixtures/` |
+| 학생 몫: 판정기 | 6~8단계 규칙(`RULE_IDS` 여섯 개) | `src/decider.mjs` |
+| 학생 몫: 탐지 규칙 | 9단계 다량 조회 탐지·회수 제안, 보너스 `xdr/` 판정·대응 | `src/detect.mjs`, `xdr/*/decide.mjs`, `read-alerts.mjs`, `respond.mjs` |
+| 학생 몫: 접속 앱 | 로그인·세션 화면, 설치형 웹앱, 기기 승인 | `public/index.html`, `public/sw.js`, `public/manifest.webmanifest`, `public/offline.html`, `api/auth/`, `api/device/`, `src/device-gate.mjs`, `src/auth-api.mjs` |
+| 학생 몫: 자료실 | 메모 API(소유자 검사), 가상 메모 읽기, 사본 복원, 정책 복원, 작전실·확인표 | `api/memos/`, `api/notes.js`, `api/memo-restore/`, `api/ops/`, `src/memo-api.mjs`, `src/memo-restore.mjs`, `src/restore-*.mjs`, `src/ops-summary.mjs`, `src/matrix.mjs`, `docs/*.sql` |
+
+시작 틀 파일도 학생이 단계마다 고친 곳이 있습니다(예: `scripts/deployment-identity.mjs`, `src/attack-check.mjs`). 위 표는 처음 출처를 기준으로 합니다.
+
+### 비밀값
+
+이 안내에는 비밀번호·토큰·서버 전용 키·기기 쿠키 값을 쓰지 않았고 이름만 적습니다. 값은 Vercel의 환경변수 비밀 입력란이나 내 컴퓨터 셸에만 넣고, 코드·Git·캡처·답변에 올리지 않습니다. 비밀값을 파일로 만들어 저장소에 넣는 절차는 없습니다. `.env`는 `.gitignore`에 있습니다.
+
+| 이름 | 쓰는 곳 | 값을 받는 곳 |
+|---|---|---|
+| `SUPABASE_URL` | 서버 함수 전체 | Supabase 프로젝트 설정 |
+| `SUPABASE_SECRET_KEY` | 서버 함수 전용(화면·브라우저에 두지 않음) | Supabase 프로젝트 설정의 서버 전용 키 |
+| `SUPABASE_PUBLISHABLE_KEY` | 로그인 서버 함수(`api/auth/*`) | Supabase 프로젝트 설정의 공개 키 |
+| `VERCEL_GIT_REPO_OWNER`, `VERCEL_GIT_REPO_SLUG`, `VERCEL_GIT_COMMIT_SHA`, `VERCEL_URL`, `VERCEL_GIT_PROVIDER` | 빌드가 `public/aleph.json`을 만들 때 | Vercel이 배포 때 자동으로 제공(내가 넣지 않음) |
+| `VAULT_TOKEN_A`, `VAULT_TOKEN_B`, `VAULT_DEVICE_COOKIE_A`, `VAULT_DEVICE_COOKIE_B`, `VAULT_A_MEMO_ID`, `VAULT_B_RESTORE_ID` | 확인표(`npm run matrix:run`)의 로그인한 항목만. 없으면 그 항목은 미실행 | 내 시험 계정으로 직접 로그인해 얻은 값을 내 셸에만 설정 |
+
+### 설치 (내 컴퓨터)
+
+1. Node.js 22 이상과 Git을 설치합니다(`package.json`의 `engines`).
+2. 저장소를 내려받고 의존성을 설치합니다(`aleph.config.json`의 `repoUrl`).
+
+```bash
+git clone https://github.com/undeadmagician32-bot/choi-bujang-secret-vault.git
+cd choi-bujang-secret-vault
+npm install
+```
+
+### 설치 (배포: Vercel + Supabase)
+
+1. Supabase에 시험용 프로젝트를 만들고, SQL Editor에서 `docs/`의 SQL을 단계 순서로 실행합니다: `MEMOS_TABLE.sql` → `MEMOS_RLS.sql` → `MEMOS_REVOKE.sql` → `MEMO_BACKUPS.sql` → `DEVICES.sql`. 각 파일 끝의 확인 쿼리에서 `rls_on = true`를 확인합니다. 가상 메모 테이블 `archive_notes`를 만드는 SQL은 메모 본문이 들어 있어 저장소에 없습니다. Supabase Auth의 시험 계정 A·B는 대시보드에서 직접 만듭니다.
+2. Vercel에서 이 저장소를 연결한 새 프로젝트를 만들고, 위 표의 `SUPABASE_*` 세 이름을 비밀 입력란에 넣은 뒤 배포합니다. 환경변수를 바꾸면 다시 배포해야 반영됩니다. 빌드 명령과 공개 폴더는 `vercel.json`에 있습니다.
+3. 배포가 끝나면 `aleph.config.json`의 `publicAppUrl`과 `/aleph.json`이 실제 주소와 커밋을 가리키는지 대조합니다.
+
+### 실행 (재현 순서)
+
+아래는 위에서 아래로 한 번씩 실행하는 순서입니다. 내 컴퓨터에서 상주하는 서버는 띄우지 않습니다. 이 저장소에는 로컬에서 `api/` 서버 함수를 실행하는 명령이 없어서, API 동작은 배포에서만 확인합니다.
+
+1. **판정기** (학생 몫, 가상 요청 연습): `npm run decider:test`(「통과」 네 줄), `npm run fixture:7`(정상 `allow`, 복합 이상 `step_up`). 심판 판정이 아닙니다.
+2. **탐지 규칙** (학생 몫, 가상 사건): `npm run detect:test`(「통과」 여섯 줄). 엔진의 사건 전달·접속 회수는 연결·시험하지 않았습니다(미실행). 보너스 연습 경보는 `npm run xdr:run -- brute-force`, `npm run xdr:run -- web-injection`입니다.
+3. **자료실·접속 앱 코드 시험**: `npm run test:r5`(2), `npm run test:package`(3), `npm run test:device`(6), `npm run test:pwa`(3), `npm run test:restore`(18), `npm run test:ops`(7), `npm run test:matrix`(9). 모두 가상 값과 메모리 저장소로 한 연습입니다. 화면 파일만 만들 때는 `npm run build -- --local`입니다.
+4. **접속 앱 (배포 주소, 시크릿 창)**: A로 로그인하면 승인 전에는 자료가 없고 `/api/memos`가 403입니다. 「이 기기 승인 요청」은 「승인 대기 중」만 만듭니다. 운영자가 `docs/DEVICES.sql`의 `update`로 승인한 뒤 「상태 다시 확인」을 누르면 메모 화면과 탈환 작전실이 열립니다. 세션 토큰은 탭 메모리에만 있어 새로 고치면 다시 로그인합니다.
+5. **탈환 작전실**: 작전실 아래의 「기록 번호」가 Vercel 함수 로그 `OPS_SUMMARY`의 같은 번호와 수치가 같은지 맞춥니다. 탐지·회수 집행·정책 사본 비교는 「미실행」으로 보여야 합니다.
+6. **확인표**: `npm run matrix:run`(로그인 없이 보낼 수 있는 항목과 로컬 항목). 결과는 `artifacts/matrix.md`입니다. 계정 A·B 항목은 위 환경변수를 설정해야 실행되고, 메모·감사 기록을 쓰는 복원 항목은 `-- --include-writes`를 붙여야 합니다. 총공세 41종은 이 표로 통과시키지 않습니다(미실행 41).
+7. **제출 묶음**: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
+
+### 중지
+
+- 내 컴퓨터: 상주 프로세스가 없어 중지할 것이 없습니다. 시험은 명령이 끝나면 끝납니다.
+- 로그인 한 사람: 화면의 「로그아웃」이 서버에서 세션을 취소합니다.
+- 기기 한 대: 운영자가 `docs/DEVICES.sql`의 회수 `update`(`status = 'revoked'`)를 실행하면 그 기기의 자료 요청이 403이 됩니다. 앱 화면에는 이 기능이 없고, 탐지의 회수 제안을 자동으로 집행하는 경로도 없습니다.
+- 자료실 전체: Vercel에서 이 프로젝트의 배포를 내리거나 환경변수를 지우는 일은 이 저장소 밖의 작업이고, 이번에 실행하지 않았습니다. 프로젝트를 지우면 되돌릴 수 없고 옛 배포 주소 문제는 「옛 노출」 문단 그대로입니다.
+
+### 복구
+
+1. **정책 되돌리기**: `npm run restore:plan`이 사본과 현재 정책의 차이와 확인 번호를 보여 주고, 맞으면 `npm run restore:apply -- --confirm=<확인 번호>`를 실행합니다. 끝나면 `npm run restore:plan`을 다시 실행해 「차이 없음」을 확인합니다. 정책 사본(`restore/policy-snapshot.json`)을 만드는 기능과 실제 사본이 없어 현재는 `SNAPSHOT_MISSING`으로 중단되고, 실제 정책 복원은 실행한 적이 없습니다.
+2. **메모 한 건 되살리기**: `docs/MEMO_BACKUPS.sql`이 적용되어 있고 사본 표에 시험 계정의 가상 메모가 있을 때, 그 계정으로 로그인한 `POST /api/memo-restore/<메모 ID>`가 200이어야 합니다. 다른 계정으로 같은 요청을 보내면 404입니다(2026-10-14 학생이 직접 확인, 「10단계 현재 상태」). 사본을 만드는 기능은 없습니다.
+3. **배포 되돌리기**: 코드가 잘못되었으면 `git revert`로 되돌리는 새 커밋을 만들어 다시 배포합니다(`git reset --hard`는 쓰지 않습니다, `AGENTS.md`). 학습 DB 자료는 지우지 않습니다. 이 순서를 실제 배포에서 실행해 본 적은 없습니다(미실행).
+4. **복구 뒤 확인**: 「10단계 제작 4」의 순서와 `npm run matrix:run`으로 1~11단계의 정상 요청이 허용되고 금지 요청이 거부되는지 다시 봅니다. 통과로 적을 수 있는 것은 실제로 보낸 요청의 결과뿐입니다.
+
+### 이 안내가 확인하지 못한 것
+
+- 새 Vercel 프로젝트와 새 Supabase 프로젝트에서 이 순서를 처음부터 따라 해 본 시험은 미실행입니다. `package/README.md`는 아직 양식 그대로입니다.
+- ALEPH SDP 엔진과 학생 판정기·탐지 함수의 실제 연결, 엔진이 집행하는 접속 회수, 운영 등록부의 이유 코드 등록 여부는 확인하지 못했습니다.
+- SQL의 적용 순서는 각 파일의 머리말과 단계 기록을 근거로 적었고 이번에 다시 실행하지 않았습니다.
+
+## 12단계 저장점
+
+- 저장점: 12단계 「탈환 작전실을 완성합니다」(제작 1~3).
+- 지금 작동하는 기능
+  1. 승인된 기기에서 열리는 「탈환 작전실」이 `GET /api/ops/summary`의 판정기 규칙·탐지·회수 상태·복구 버전 요약을 보여 주고, 서버 응답으로 확인한 것과 미실행을 구분합니다. 서버 기록 `OPS_SUMMARY`의 같은 기록 번호·수치와 맞춰 볼 수 있고, 메모 본문은 표시하지 않습니다.
+  2. `npm run matrix:run`이 1~11단계의 정상·금지 요청을 실제로 보내(또는 함수를 불러) 기대·실제 결과·요청 ID·확인 시각을 `artifacts/matrix.md`에 남깁니다. 실행하지 않은 항목과 총공세 41종은 미실행으로 남고 통과로 세지 않습니다.
+  3. 위 「12단계 설치·실행·중지·복구 안내」. 1~11단계의 기능과 규칙은 바꾸지 않았습니다.
+- 다시 실행하는 방법: `npm run test:ops`(7), `npm run test:matrix`(9)와 기존 시험은 위 「실행」 순서. 제출 묶음은 `bundle-notes.json`을 12단계 내용으로 고친 뒤 `npm run bundle`을 실행하며 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 12로 올렸고(`src/attack-check.mjs`의 허용 단계에 12를 추가), `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`, `judgeIssuer`는 11단계와 같습니다. `allowedRoutes`와 `src/resources.mjs`에 `/api/ops/summary`는 넣지 않았습니다(새 자원 ID가 운영 등록부에 있는지 확인하지 못했습니다).
+  - `RULE_IDS`의 여섯 규칙은 모두 코드에 있고 `src/decider.mjs`는 바꾸지 않았습니다.
+  - `src/attack-check.mjs`의 점검은 11단계와 같은 16건입니다(`export`만 추가).
+- 확인한 것과 하지 않은 것
+  - 로컬 시험은 가상 값으로 모두 통과했습니다(위 명령). 이것은 심판의 판정이 아닙니다.
+  - 배포에서 작전실을 연 화면, `OPS_SUMMARY` 기록과의 대조, `npm run matrix:run`의 실제 결과는 미실행입니다. 총공세 41종도 미실행입니다.
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포하고 `X-Content-Type-Options: nosniff` 머리글을 붙입니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.

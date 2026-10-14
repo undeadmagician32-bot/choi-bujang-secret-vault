@@ -55,6 +55,20 @@ li span { color: #bfd0e5; }
 .memos ul { margin: 0; }
 .memos .error { margin: 0 0 12px; color: #ffb4c0; font-size: 15px; }
 .memos .empty { color: #bfd0e5; }
+.ops { margin: 26px 0; padding: 18px; border: 1px solid #51667c; border-radius: 14px; background: #1a2a3d; }
+.ops h2 { margin: 0 0 12px; font-size: 18px; }
+.ops .card { margin: 0 0 12px; padding: 12px 14px; border: 1px solid #51667c; border-radius: 12px; background: #101a28; }
+.ops .card h3 { margin: 0 0 8px; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ops .badge { padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #51667c; color: #ecf4ff; }
+.ops .badge.verified { background: #8ad8df; color: #101a28; }
+.ops .badge.failed { background: #d07384; color: #101a28; }
+.ops dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 15px; }
+.ops dt { color: #bfd0e5; }
+.ops dd { margin: 0; color: #ecf4ff; overflow-wrap: anywhere; }
+.ops .meta { margin: 8px 0 0; font-size: 14px; color: #bfd0e5; }
+.ops .error { margin: 0 0 12px; color: #ffb4c0; font-size: 15px; }
+.ops button { padding: 8px 12px; border: 0; border-radius: 10px; background: #51667c; color: #ecf4ff; font-size: 15px; font-weight: 700; cursor: pointer; }
+.ops button:disabled { opacity: .6; cursor: wait; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -93,6 +107,13 @@ li span { color: #bfd0e5; }
 <button type="button" class="secondary" id="device-refresh" hidden>상태 다시 확인</button>
 </div>
 <p class="caution">앱으로 설치했다는 표시는 기기를 믿을 근거가 아닙니다. 이 화면은 기기 승인을 정하지 않으며, 승인 여부는 서버와 판정기가 정합니다. 기기 키와 토큰은 이 화면의 새 코드가 브라우저 저장소에 넣지 않습니다.</p>
+</section>
+<section class="ops" id="ops" hidden aria-live="polite">
+<h2>탈환 작전실</h2>
+<p class="error" id="ops-error" role="alert" hidden></p>
+<div id="ops-cards"></div>
+<p class="meta" id="ops-meta"></p>
+<button type="button" id="ops-refresh">다시 읽기</button>
 </section>
 <section class="memos" id="memos" hidden>
 <h2>내 메모</h2>
@@ -319,6 +340,92 @@ const renderMemos = session => {
   memoList.replaceChildren();
   if (session) loadMemos();
 };
+// 탈환 작전실(12단계): 서버 요약(/api/ops/summary)의 값만 그립니다. 화면이 수치를 계산하거나 성공 문구를 만들지 않습니다.
+// 상태는 서버가 알려 준 verified(서버가 이번에 확인) / not_run(미실행) / failed(확인 실패) 셋뿐이고, 메모 본문은 받지도 않습니다.
+const opsBox = document.querySelector('#ops');
+const opsCards = document.querySelector('#ops-cards');
+const opsMeta = document.querySelector('#ops-meta');
+const opsError = document.querySelector('#ops-error');
+const opsRefresh = document.querySelector('#ops-refresh');
+const BADGES = { verified: '서버 응답으로 확인', not_run: '미실행', failed: '확인 실패' };
+const opsText = value => (value === null || value === undefined ? '-' : String(value));
+const opsCard = (title, status, rows) => {
+  const card = document.createElement('div');
+  const heading = document.createElement('h3');
+  const badge = document.createElement('span');
+  const list = document.createElement('dl');
+  card.className = 'card';
+  heading.append(title);
+  badge.className = `badge ${BADGES[status] ? status : 'failed'}`;
+  badge.textContent = BADGES[status] ?? '확인 실패';
+  heading.append(badge);
+  for (const [name, value] of rows) {
+    const dt = document.createElement('dt');
+    const dd = document.createElement('dd');
+    dt.textContent = name;
+    dd.textContent = value;
+    list.append(dt, dd);
+  }
+  card.append(heading, list);
+  return card;
+};
+const renderOps = data => {
+  const { rules, detection, revocation, restore } = data;
+  const dev = revocation.devices;
+  const audit = restore.audit;
+  const outcomes = audit ? Object.entries(audit.byOutcome).map(([name, count]) => `${name} ${count}`).join(', ') : '';
+  opsCards.replaceChildren(
+    opsCard('판정기 규칙', rules.status, [
+      ['규칙 수', `${opsText(rules.count)}개`],
+      ['규칙 이름', rules.ruleIds.join(', ')],
+      ['실제 요청 판정', `${BADGES[rules.liveDecisions.status]} (자료실 서버는 판정기를 부르지 않음)`],
+    ]),
+    opsCard('탐지 사건', detection.status, [
+      ['사건 수', detection.events === null ? '집계 없음 (사건 전달 경로 미연결)' : String(detection.events)],
+      ['회수 제안 수', detection.proposals === null ? '집계 없음' : String(detection.proposals)],
+    ]),
+    opsCard('회수 상태 (내 기기)', revocation.status, [
+      ['승인 대기', dev ? `${dev.pending}개` : '-'],
+      ['승인됨', dev ? `${dev.approved}개` : '-'],
+      ['회수됨', dev ? `${dev.revoked}개` : '-'],
+      ['회수 집행', `${BADGES[revocation.enforcement.status]} (탐지 제안을 집행하는 경로 없음)`],
+    ]),
+    opsCard('복구 버전 (내 사본)', restore.status, [
+      ['사본 수', restore.versions ? `${restore.versions.count}건` : '-'],
+      ['최근 사본', restore.versions
+        ? (restore.versions.latest.map(v => `${opsText(v.backedUpAt)} · ${opsText(v.hash8)}`).join(' / ') || '없음')
+        : '-'],
+      ['복원 기록', audit ? `${audit.total}건${outcomes ? ` (${outcomes})` : ''}${audit.truncated ? ' · 일부만 집계' : ''}` : '-'],
+      ['정책 사본 비교', `${BADGES[restore.policySnapshot.status]} (로컬 restore:plan)`],
+    ]),
+  );
+  opsMeta.textContent = `기록 번호 ${data.recordId} · ${data.generatedAt} · 서버 기록 OPS_SUMMARY의 같은 번호와 수치를 맞춰 볼 수 있습니다. 메모 본문은 이 화면에 없습니다.`;
+};
+const loadOps = async () => {
+  opsError.hidden = true;
+  opsRefresh.disabled = true;
+  try {
+    const response = await fetch('/api/ops/summary', {
+      cache: 'no-store', headers: { Authorization: `Bearer ${await freshToken()}` },
+    });
+    let data = null;
+    try { data = await response.json(); } catch { /* 본문 없음 */ }
+    if (response.status === 403 && authSession) syncDevice(authSession, shownToken);
+    if (!response.ok) throw new Error(`요약을 읽지 못했습니다 (${response.status}). 확인된 결과로 표시하지 않습니다.`);
+    if (!data || typeof data.recordId !== 'string' || !data.rules || !data.detection || !data.revocation || !data.restore) {
+      throw new Error('요약 형식이 맞지 않아 표시하지 않습니다.');
+    }
+    renderOps(data);
+  } catch (error) {
+    opsCards.replaceChildren();
+    opsMeta.textContent = '';
+    opsError.textContent = error.message;
+    opsError.hidden = false;
+  } finally {
+    opsRefresh.disabled = false;
+  }
+};
+opsRefresh.addEventListener('click', loadOps);
 // 기기 승인(11단계): 상태는 서버(/api/device)가 알려 준 값만 씁니다. 이 화면은 승인하지 않고 요청만 보냅니다.
 // 승인된 기기로 확인되기 전에는 자료·메모 화면을 열지 않으며, 서버도 승인 없는 기기의 자료 요청을 403으로 거부합니다.
 // 기기 비밀값은 서버가 HttpOnly 쿠키로만 다루므로 이 코드와 브라우저 저장소에는 없습니다.
@@ -348,11 +455,14 @@ const applyDevice = data => {
   renderDevice();
 };
 const lockVault = () => {
+  opsBox.hidden = true;
+  opsCards.replaceChildren();
   showNotesMessage('이 기기가 승인되기 전에는 자료가 보이지 않습니다.');
   renderMemos(null);
 };
 const openVault = session => {
   loadNotes(session);
+  if (opsBox.hidden) { opsBox.hidden = false; loadOps(); }
   // 이미 열려 있으면 입력 중인 내용을 지우지 않고 세션만 바꿉니다.
   if (memosBox.hidden) renderMemos(session); else currentSession = session;
 };
@@ -403,6 +513,8 @@ const render = session => {
       deviceState = 'unknown';
       deviceId = null;
       showDeviceError('');
+      opsBox.hidden = true;
+      opsCards.replaceChildren();
       loadNotes(null);
       renderMemos(null);
     } else if (wasUser && deviceState === 'approved') {
