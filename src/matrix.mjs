@@ -13,8 +13,8 @@ export const ATTACK_TOTAL = 41; // 총공세 종류 수(제작 안내 기준). �
 export const ENV_NAMES = Object.freeze(['VAULT_TOKEN_A', 'VAULT_TOKEN_B', 'VAULT_DEVICE_COOKIE_A', 'VAULT_DEVICE_COOKIE_B',
   'VAULT_A_MEMO_ID', 'VAULT_B_RESTORE_ID']);
 
-// 화면 코드에도 있던 공개용 publishable key입니다(비밀 키가 아님). src/attack-check.mjs와 같은 값입니다.
-// attack-check.mjs는 제출 묶음 실행기가 불러오는 모듈이라 이 확인표가 그 모듈을 가져다 쓰지 않도록 따로 둡니다.
+// 공개용 publishable key입니다(비밀 키가 아님). 예전 화면 코드와 11단계까지의 src/attack-check.mjs에 있던 값입니다.
+// attack-check.mjs는 12단계부터 요청을 보내지 않으므로, 실제 요청을 보내는 일은 이 확인표만 합니다.
 const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 // 위조 토큰: 매번 새로 만든 무작위 키로 서명한 가짜이며 아무 비밀값도 쓰지 않습니다.
@@ -24,7 +24,7 @@ function forgedToken(issuer) {
   const body = b64({ iss: issuer, aud: 'authenticated', role: 'authenticated', sub: randomUUID(), iat: now, exp: now + 3600 });
   return `${head}.${body}.${createHmac('sha256', randomBytes(32)).update(`${head}.${body}`).digest('base64url')}`;
 }
-const KNOWN_MEMO_ID = 'b0b0b0b0-0000-4000-8000-000000000001'; // 공개 가능한 B의 시험 메모 id(attack-check와 같은 값)
+const KNOWN_MEMO_ID = 'b0b0b0b0-0000-4000-8000-000000000001'; // 공개 가능한 B의 시험 메모 id(11단계까지의 attack-check와 같은 값)
 const SAFE_VALUE = /^[A-Za-z0-9._~-]{8,4096}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const KEY_PATTERN = /sb_publishable_|eyJ[A-Za-z0-9_-]{10,}\.eyJ/u;

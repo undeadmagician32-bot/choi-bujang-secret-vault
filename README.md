@@ -436,7 +436,7 @@
   1. 검증된 정책 사본과 현재 시험 정책의 차이를 보여 주고, 확인 번호를 받은 뒤에만 설정 파일의 정책 항목을 되돌립니다. 사본이 없거나 검증에 실패하면 중단합니다.
   2. 로그인한 본인의 메모 한 건을 비공개 사본에서 ID·소유자·내용 해시를 대조한 뒤 되살리고, 다른 메모와 감사 기록은 보존합니다.
   3. 9단계 탐지, 8단계 구역, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
-- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 배포 주소에 실제 요청 14건을 보냅니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 당시 배포 주소에 실제 요청 14건을 보냈습니다(12단계부터는 요청을 보내지 않고 `not_run`으로 기록). 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
 - 설정 대조 (`aleph.config.json`)
   - `step`을 10으로 올렸고 `restoreRoute`를 `POST /api/memo-restore/:id`로 채웠습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 9단계와 같고 구현과 일치합니다. `allowedRoutes`에는 복원 경로를 넣지 않았습니다. `judgeIssuer`는 바꾸지 않았습니다.
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
@@ -470,7 +470,7 @@
   1. 설치형 웹앱 설정과 오프라인 안내, 기기 승인 상태 표시. 설치 표시만으로 기기를 믿지 않습니다.
   2. 서버 표에서 `approved`로 확인된 기기만 자료·메모 경로가 열리고, 나머지는 403입니다. 승인은 앱 밖에서 운영자가 합니다.
   3. 10단계 복원, 9단계 탐지, 8단계 구역, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
-- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 배포 주소에 실제 요청 16건을 보냅니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 당시 배포 주소에 실제 요청 16건을 보냈습니다(12단계부터는 요청을 보내지 않고 `not_run`으로 기록). 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
 - 설정 대조 (`aleph.config.json`)
   - `step`을 11로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`는 10단계와 같고 구현과 일치합니다. `judgeIssuer`는 바꾸지 않았습니다.
   - `src/attack-check.mjs`에 `anonymous_device_status`, `anonymous_device_request`(로그인 없이 `/api/device`에 보내면 401)를 더해 16건입니다. 승인 전 자료 거부(403)는 로그인한 계정이 필요해 이 점검에 없고, 2026-10-14 학생이 직접 확인했습니다(위 「아직 확인하지 못한 것」). `npm run bundle`은 같은 날 배포 뒤 다시 실행해 16건이 모두 기대대로 거부되었습니다(커밋 `6fbc888`).
@@ -537,7 +537,7 @@ npm install
 4. **접속 앱 (배포 주소, 시크릿 창)**: A로 로그인하면 승인 전에는 자료가 없고 `/api/memos`가 403입니다. 「이 기기 승인 요청」은 「승인 대기 중」만 만듭니다. 운영자가 `docs/DEVICES.sql`의 `update`로 승인한 뒤 「상태 다시 확인」을 누르면 메모 화면과 탈환 작전실이 열립니다. 세션 토큰은 탭 메모리에만 있어 새로 고치면 다시 로그인합니다.
 5. **탈환 작전실**: 작전실의 「가린 서버 기록」 카드(응답의 `serverRecord`, 수치와 상태만 있고 식별자·메모 본문 없음)가 화면 카드의 수치와 모두 「일치」로 나와야 합니다. 이 기록은 Vercel 함수 로그 `OPS_SUMMARY`에 남는 값과 같아서, 「기록 번호」로 로그의 같은 줄을 찾아 맞춰 볼 수도 있습니다. 탐지·회수 집행·정책 사본 비교는 「미실행」으로 보여야 합니다.
 6. **확인표**: `npm run matrix:run`(로그인 없이 보낼 수 있는 항목과 로컬 항목). 결과는 `artifacts/matrix.md`입니다. 계정 A·B 항목은 위 환경변수를 설정해야 실행되고, 메모·감사 기록을 쓰는 복원 항목은 `-- --include-writes`를 붙여야 합니다. 총공세 41종은 이 표로 통과시키지 않습니다(미실행 41).
-7. **제출 묶음**: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
+7. **제출 묶음**: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 12단계부터 번들은 요청을 보내지 않고 직접 점검 16건을 모두 `not_run`으로 기록합니다(심판의 규칙: 요청을 보내지 않은 점검은 `not_run`). 실제 요청 결과는 바로 아래 6번의 확인표에 따로 있습니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
 
 ### 중지
 
@@ -566,11 +566,11 @@ npm install
   1. 승인된 기기에서 열리는 「탈환 작전실」이 `GET /api/ops/summary`의 판정기 규칙·탐지·회수 상태·복구 버전 요약을 보여 주고, 서버 응답으로 확인한 것과 미실행을 구분합니다. 응답에 함께 싣는 「가린 서버 기록」(`serverRecord`)을 화면에 보이고 화면 수치와 칸마다 대조하며, 서버 로그 `OPS_SUMMARY`와 같은 값입니다. 메모 본문은 표시하지 않습니다.
   2. `npm run matrix:run`이 1~11단계의 정상·금지 요청을 실제로 보내(또는 함수를 불러) 기대·실제 결과·요청 ID·확인 시각을 `artifacts/matrix.md`에 남깁니다. 실행하지 않은 항목과 총공세 41종은 미실행으로 남고 통과로 세지 않습니다.
   3. 위 「12단계 설치·실행·중지·복구 안내」. 1~11단계의 기능과 규칙은 바꾸지 않았습니다.
-- 다시 실행하는 방법: `npm run test:ops`(7), `npm run test:matrix`(9)와 기존 시험은 위 「실행」 순서. 제출 묶음은 `bundle-notes.json`을 12단계 내용으로 고친 뒤 `npm run bundle`을 실행하며 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
+- 다시 실행하는 방법: `npm run test:ops`(7), `npm run test:matrix`(9)와 기존 시험은 위 「실행」 순서. 제출 묶음은 `bundle-notes.json`을 12단계 내용으로 고친 뒤 `npm run bundle`을 실행합니다(요청을 보내지 않고 점검 16건을 `not_run`으로 기록. 실제 요청 결과는 `npm run matrix:run`의 `artifacts/matrix.md`). `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
 - 설정 대조 (`aleph.config.json`)
   - `step`을 12로 올렸고(`src/attack-check.mjs`의 허용 단계에 12를 추가), `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`, `judgeIssuer`는 11단계와 같습니다. `allowedRoutes`와 `src/resources.mjs`에 `/api/ops/summary`는 넣지 않았습니다(새 자원 ID가 운영 등록부에 있는지 확인하지 못했습니다).
   - `RULE_IDS`의 여섯 규칙은 모두 코드에 있고 `src/decider.mjs`는 바꾸지 않았습니다.
-  - `src/attack-check.mjs`의 점검은 11단계와 같은 16건입니다(`export`만 추가).
+  - `src/attack-check.mjs`는 점검 이름 16건(11단계와 같음)을 그대로 두되, 요청을 보내지 않고 모두 `observed: not_run`으로 기록합니다. 11단계까지 이 파일이 직접 보내던 요청(결과 401·404 등)은 `src/matrix.mjs`의 확인표가 맡고, 그 실측 결과는 위 「확인한 것과 하지 않은 것」에 있습니다. 이 변경 뒤 번들 JSON의 점검 칸은 실제 결과가 아니라 미실행 표시입니다.
 - 확인한 것과 하지 않은 것
   - 로컬 시험은 가상 값으로 모두 통과했습니다(위 명령). 이것은 심판의 판정이 아닙니다.
   - 2026-10-14 학생이 배포에서 작전실을 열어 화면의 기록 번호 `239ccbaa`, 규칙 6개, 탐지 미실행, 기기 수 0·3·0을 Vercel 로그 `OPS_SUMMARY`의 같은 번호·수치와 맞춰 보았습니다(스크린샷 기준, 로그 줄 오른쪽의 사본 수·복원 기록 수는 잘려 대조하지 못했습니다).
@@ -610,7 +610,7 @@ npm install
 2. **자료 되돌리기**: `docs/MEMO_BACKUPS.sql`이 적용되어 있고 사본 표에 시험 계정 B의 가상 메모가 있을 때, 배포 뒤 B로 로그인한 요청 `POST /api/memo-restore/<메모 ID>`가 200을 돌려주고 `GET /api/memos/<같은 ID>`의 제목·본문 해시(`contentHashOf`)가 사본과 같아야 자료가 돌아온 것입니다. 같은 요청을 A 토큰으로 보내면 404여야 합니다.
 3. **재배포**: 정책 파일을 되돌렸으면 다시 배포해야 반영됩니다. 배포가 끝난 뒤에만 4~5를 합니다.
 4. **로컬 명령** (배포 없이 실행): 아래 표의 명령을 위에서부터 실행합니다.
-5. **배포 주소 점검**: 표의 「배포」 항목을 시크릿 창과 A·B 두 계정으로 보냅니다. `npm run bundle`은 배포 주소에 실제 요청 14건(1·3·5·10단계 점검)을 보내고 결과를 `artifacts/submission.json`에 적습니다. 이 파일과 `bundle-notes.json`은 커밋하지 않습니다.
+5. **배포 주소 점검**: 표의 「배포」 항목을 시크릿 창과 A·B 두 계정으로 보냅니다. `npm run bundle`은 12단계부터 요청을 보내지 않고 직접 점검을 `not_run`으로 `artifacts/submission.json`에 적습니다(당시 11단계 이전에는 요청 14건을 보냈습니다). 실제 요청 결과는 `npm run matrix:run`의 표에 있습니다. 이 파일과 `bundle-notes.json`은 커밋하지 않습니다.
 6. **기록**: 실행한 항목은 날짜와 결과를 상태 칸에 적고, 실행하지 못한 항목은 미실행으로 남깁니다. 실패한 항목은 첫 오류만 적고 한 가지씩 고칩니다.
 
 ### 단계별 정상·금지 요청

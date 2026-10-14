@@ -57,64 +57,25 @@ test('build identity uses Vercel Git and deployment metadata', () => {
   assert.throws(() => deploymentIdentity(env, { ...config, step: '3' }));
 });
 
-test('step 5 attack checks send unauthenticated and forged requests and record only statuses', async () => {
+test('bundle attack checks send no request and record every check as not_run', async () => {
   const originalFetch = globalThis.fetch;
-  const seen = [];
+  let sent = 0;
   try {
-    globalThis.fetch = async (url, init = {}) => {
-      const target = new URL(String(url));
-      seen.push({ url: String(url), path: target.pathname, method: init.method ?? 'GET', headers: init.headers ?? {},
-        body: init.body, redirect: init.redirect });
-      if (target.pathname === '/') {
-        return new Response('<html>화면</html>', { status: 200, headers: { 'x-content-type-options': 'nosniff' } });
+    globalThis.fetch = async () => { sent += 1; return new Response('x', { status: 200 }); };
+    for (const step of [5, 6, 7, 8, 9, 10, 11, 12]) {
+      const results = await runAttackChecks({ ...config, step });
+      assert.equal(results.length, 16);
+      assert.equal(new Set(results.map((item) => item.attackId)).size, results.length);
+      for (const result of results) {
+        assert.deepEqual(Object.keys(result).sort(), ['attackId', 'expected', 'observed']);
+        assert.equal(result.observed, 'not_run'); // 보내지 않은 점검에 통과·거부·허용을 지어내 적지 않음
+        assert.ok(result.expected.trim() && result.expected.length <= 300);
+        assert.match(result.attackId, /^[a-z0-9][a-z0-9_.-]{0,79}$/iu);
       }
-      return new Response(target.pathname === '/data.json' ? 'not found' : '{"error":"LOGIN_REQUIRED"}',
-        { status: target.pathname === '/data.json' ? 404 : 401 });
-    };
-    const results = await runAttackChecks(config);
-    assert.equal(results.length, 16);
-    const byId = Object.fromEntries(results.map((item) => [item.attackId, item.observed]));
-    assert.match(byId.home_security_header, /보안 머리글이 있음/u);
-    assert.match(byId.home_code_has_no_key, /보이지 않음/u);
-    assert.equal(new Set(results.map((item) => item.attackId)).size, results.length);
-    for (const result of results) {
-      assert.deepEqual(Object.keys(result).sort(), ['attackId', 'expected', 'observed']);
-      assert.doesNotMatch(result.observed, /eyJ|Bearer|notes|title/u);
     }
-    assert.match(results[0].observed, /확인 표시가 보이지 않음 \(HTTP 404\)/u);
-    const homeIds = ['home_security_header', 'home_code_has_no_key'];
-    const guarded = results.slice(1).filter((item) => !homeIds.includes(item.attackId));
-    assert.equal(guarded.length, 13);
-    assert.ok(guarded.every((item) => /HTTP 401, 자료 없이 거부됨/u.test(item.observed)));
-    assert.ok(seen.every((req) => req.redirect === 'error'));
-    const post = seen.find((req) => req.method === 'POST');
-    assert.equal(post.body, '{}');
-    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'POST', 'POST', 'PUT', 'PUT']);
-    assert.ok(seen.some((req) => req.path === '/api/memos/b0b0b0b0-0000-4000-8000-000000000001' && req.method === 'GET'));
-    const ownerChange = seen.find((req) => req.method === 'PUT' && String(req.body).includes('owner_id'));
-    assert.ok(ownerChange && !ownerChange.headers.Authorization);
-    const bearer = seen.filter((req) => req.headers.Authorization);
-    assert.equal(bearer.length, 2);
-    for (const req of bearer) assert.match(req.headers.Authorization, /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/u);
-    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 13);
-    // 원본 자료 API는 쿼리 없는 주소 그대로, 공개 키만 들고 직접 요청합니다.
-    const direct = seen.find((req) => req.url === config.originalApiUrl);
-    assert.ok(direct && direct.method === 'GET' && direct.headers.apikey && !direct.headers.Authorization);
-    assert.match(results.at(-1).observed, /HTTP 401, 자료 없이 거부됨/u);
-
-    // 보호가 뚫리면 그대로 기록해야 합니다.
-    globalThis.fetch = async () => new Response('[]', { status: 200 });
-    const open = await runAttackChecks(config);
-    assert.ok(open.slice(1).filter((item) => !homeIds.includes(item.attackId))
-      .every((item) => /거부되지 않음/u.test(item.observed)));
-    // 보안 머리글이 없고 화면에 키가 있으면 그대로 기록해야 합니다.
-    globalThis.fetch = async (url) => new URL(String(url)).pathname === '/'
-      ? new Response('<script>const k="sb_publishable_ABCDEFGHIJKLMNOP"</script>', { status: 200 })
-      : new Response('x', { status: 401 });
-    const weak = Object.fromEntries((await runAttackChecks(config)).map((item) => [item.attackId, item.observed]));
-    assert.match(weak.home_security_header, /보안 머리글이 없음/u);
-    assert.match(weak.home_code_has_no_key, /키로 보이는 문자열이 있음/u);
+    assert.equal(sent, 0); // 번들은 네트워크를 쓰지 않음
     await assert.rejects(() => runAttackChecks({ ...config, step: 1 }));
+    await assert.rejects(() => runAttackChecks({ ...config, step: 13 }));
   } finally {
     globalThis.fetch = originalFetch;
   }
