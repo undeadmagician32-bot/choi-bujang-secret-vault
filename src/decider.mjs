@@ -93,6 +93,8 @@ function readZone(request) {
 }
 
 export async function decide(request) {
+  // 객체가 아닌 입력(null 등)도 예외 없이 아래 6단계 규칙에서 거부됩니다. 값을 지어내 채우지 않습니다.
+  if (!isPlainObject(request)) request = {};
   // 6단계 device_registered: 엔진이 등록됐다고 확인한 기기(true)만 통과. 미등록·값 없음은 거부.
   if (request.deviceRegistered !== true) {
     return response(request, 'deny', 'device_not_registered', 'device_registered');

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { markResource } from '../src/resources.mjs';
+import { gateDevice } from '../src/device-gate.mjs';
 
 // 2단계: 가상 메모는 Supabase 테이블 archive_notes에 있고, 이 함수만 서버 전용 키로 읽습니다.
 // 3단계: 요청의 Authorization 토큰을 src/verify-login.mjs로 서버에서 검사하고, 통과해야만 자료를 읽습니다.
@@ -82,6 +83,8 @@ export default async function handler(request, response) {
     const supabase = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    // 11단계: 서버 표에서 승인된 기기가 아니면 자료를 읽기 전에 거부합니다.
+    if (!await gateDevice({ request, response, verified, supabase })) return;
     const { data, error } = await supabase
       .from('archive_notes')
       .select('title, content')

@@ -19,8 +19,8 @@ function forgedToken(issuer) {
 }
 
 export async function runAttackChecks(config) {
-  // 6~10단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지·복원)는 5단계 점검에 10단계 복원 경로 점검 한 건을 더해 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수는 심판이 점검합니다.
-  if (![5, 6, 7, 8, 9, 10].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
+  // 6~11단계(등록 기기·추가 확인·구역 규칙·다량 조회 탐지·복원·기기 승인)는 5단계 점검에 10단계 복원 경로와 11단계 기기 승인 경로 점검을 더해 씁니다. 미등록 기기·이상 접속·타인 구역·접속 회수는 심판이 점검합니다.
+  if (![5, 6, 7, 8, 9, 10, 11].includes(config.step)) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   let app;
   try {
     app = new URL(config.publicAppUrl);
@@ -97,6 +97,9 @@ export async function runAttackChecks(config) {
     // 10단계: 로그인 없이는 사본 복원 경로도 거부되어야 합니다. 없는 id에 빈 본문을 보내 실제 메모가 만들어지지 않게 합니다.
     ['anonymous_memo_restore', '로그인 없이 사본에서 메모를 복원하면 401', `/api/memo-restore/${randomUUID()}`,
       { method: 'POST', body: '{}' }],
+    // 11단계: 로그인 없이는 기기 승인 상태 조회·승인 요청도 거부되어야 합니다(승인 전 자료 거부는 로그인한 두 계정으로 직접 확인).
+    ['anonymous_device_status', '로그인 없이 기기 승인 상태를 조회하면 401', '/api/device', {}],
+    ['anonymous_device_request', '로그인 없이 기기 승인을 요청하면 401', '/api/device', { method: 'POST', body: '{}' }],
     ['anonymous_memo_owner_change', '로그인 없이 owner_id를 넣어 고치면 401', `/api/memos/${randomUUID()}`,
       { method: 'PUT', body: JSON.stringify({ title: 'x', body: 'y', owner_id: randomUUID() }) }],
   ];

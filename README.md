@@ -440,6 +440,39 @@
   - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
   - `src/attack-check.mjs`에 `anonymous_memo_restore`(로그인 없이 복원 경로에 보내면 401)를 더해 14건입니다. 이번 저장점에서 이 점검은 실행하지 않았습니다(미실행).
 
+## 11단계 현재 상태: 설치형 웹앱과 기기 승인
+
+- 설치형 화면: `public/manifest.webmanifest`(앱 이름 「BYTE BACK 내 자료실」), 아이콘 `public/icons/`, 오프라인 안내 `public/offline.html`, 안내 전용 서비스 워커 `public/sw.js`. 서비스 워커는 화면 이동이 네트워크 오류로 실패할 때만 안내 페이지를 보여 주며 자료·토큰·`/api` 응답은 가로채거나 저장하지 않습니다. 따로 설치하는 접속 프로그램은 없고, 설치했다는 표시는 기기 확인 근거가 아닙니다.
+- 기기 승인(`src/device-gate.mjs`, `api/device/index.js`, 표 `docs/DEVICES.sql`의 `device_registrations`): 서버가 기기 비밀값을 만들어 `HttpOnly`·`Secure`·`SameSite=Strict` 쿠키(`vault_device`, 경로 `/api`)로만 보내고, 표에는 SHA-256 해시만 둡니다. 화면 코드와 브라우저 저장소에는 기기 키가 없습니다. `GET /api/device`는 서버가 확인한 상태(`none`·`pending`·`approved`·`revoked`)를, `POST /api/device`는 `pending` 요청만 만듭니다. `approved`는 운영자가 Supabase에서 직접 바꾼 값뿐이며 앱 화면에는 승인 기능이 없습니다.
+- 자료 보호: 로그인 검사 뒤 서버 표로 기기 승인을 확인하고(`/api/memos`, `/api/memos/:id`, `/api/memo-restore/:id`, `/api/notes`), 승인된 기기가 아니면 자료 없이 403 `DEVICE_NOT_APPROVED`, 표를 확인하지 못하면 503입니다. 화면은 서버가 `approved`라고 알려 줄 때만 메모·자료 화면을 엽니다. 심판 토큰은 반 엔진이 기기를 이미 확인한 요청이라 이 검사를 거치지 않습니다.
+- 이 표는 학생 앱의 서버 쪽 기기 등록부이며 반 엔진의 `deviceRegistered`(판정기 요청 항목)와 별개입니다. `src/decider.mjs`는 `decide()`가 객체가 아닌 입력(null 등)에서 예외를 던지지 않고 기존 6단계 규칙으로 거부하도록 가드 한 줄만 더했습니다. 함수 이름·인자·응답 다섯 항목과 규칙은 그대로이고 `RULE_IDS` 여섯 규칙은 모두 코드에 있습니다.
+- 1~10단계의 기능과 규칙은 바꾸지 않았습니다.
+
+### 확인 순서
+
+1. `npm run test:device`(pass 6), `npm run test:pwa`(pass 3), `npm run test:r5`(pass 2), `npm run test:package`(pass 3), `npm run test:restore`(pass 18), `npm run decider:test`(통과 네 줄), `npm run detect:test`(통과 여섯 줄). 모두 가상 값과 메모리 저장소로 한 로컬 연습입니다.
+2. 배포 전 Supabase SQL Editor에서 `docs/DEVICES.sql`을 실행해 `rls_on = true`를 확인합니다.
+3. 배포 뒤 시크릿 창에서 A로 로그인합니다. 승인 전에는 화면에 자료가 없고 `/api/memos`가 403이어야 합니다. 「이 기기 승인 요청」은 「승인 대기 중」만 만들어야 합니다. 운영자가 `DEVICES.sql`의 `update`로 승인한 뒤 「상태 다시 확인」을 누르면 기존 화면이 열려야 합니다. 다른 창이나 계정 B에서는 같은 승인이 따라오지 않아야 합니다.
+
+### 아직 확인하지 못한 것
+
+- 위 3번의 배포 확인과 `docs/DEVICES.sql` 적용은 하지 않았습니다(미실행). 서버가 실제 `Set-Cookie`를 보내는지도 확인하지 못했습니다.
+- `/api/device`를 `allowedRoutes`와 `src/resources.mjs`에 넣지 않았습니다. 자료 경로가 아니라 로그인·복원 경로처럼 두었으며, 배포에서 이 경로가 막히는지는 확인하지 못했습니다.
+- 기존 로그인 세션 토큰은 여전히 `localStorage`(`vault-session`)에 저장됩니다. 이번 단계에서 바꾸지 않았습니다.
+- 기기 승인을 판정기·반 엔진과 연결하지 않았습니다.
+
+## 11단계 저장점
+
+- 저장점: 11단계 「나만의 접속 앱을 완성합니다」.
+- 지금 작동하는 기능
+  1. 설치형 웹앱 설정과 오프라인 안내, 기기 승인 상태 표시. 설치 표시만으로 기기를 믿지 않습니다.
+  2. 서버 표에서 `approved`로 확인된 기기만 자료·메모 경로가 열리고, 나머지는 403입니다. 승인은 앱 밖에서 운영자가 합니다.
+  3. 10단계 복원, 9단계 탐지, 8단계 구역, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 배포 주소에 실제 요청 16건을 보냅니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 11로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`는 10단계와 같고 구현과 일치합니다. `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/attack-check.mjs`에 `anonymous_device_status`, `anonymous_device_request`(로그인 없이 `/api/device`에 보내면 401)를 더해 16건입니다. 승인 전 자료 거부(403)는 로그인한 계정이 필요해 이 점검에 없습니다(직접 확인, 미실행).
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포하고 `X-Content-Type-Options: nosniff` 머리글을 붙입니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.

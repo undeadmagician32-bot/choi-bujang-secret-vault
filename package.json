@@ -5,6 +5,8 @@
   "scripts": {
     "build": "node scripts/build-public.mjs",
     "test:r5": "node --test test/r5.test.mjs",
+    "test:pwa": "node --test test/pwa.test.mjs",
+    "test:device": "node --test test/device-gate.test.mjs",
     "test:package": "node --test test/package-starter.test.mjs",
     "bundle": "node scripts/bundle.mjs",
     "decider:test": "node scripts/decider-test.mjs",

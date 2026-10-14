@@ -72,7 +72,7 @@ test('step 5 attack checks send unauthenticated and forged requests and record o
         { status: target.pathname === '/data.json' ? 404 : 401 });
     };
     const results = await runAttackChecks(config);
-    assert.equal(results.length, 14);
+    assert.equal(results.length, 16);
     const byId = Object.fromEntries(results.map((item) => [item.attackId, item.observed]));
     assert.match(byId.home_security_header, /보안 머리글이 있음/u);
     assert.match(byId.home_code_has_no_key, /보이지 않음/u);
@@ -84,19 +84,19 @@ test('step 5 attack checks send unauthenticated and forged requests and record o
     assert.match(results[0].observed, /확인 표시가 보이지 않음 \(HTTP 404\)/u);
     const homeIds = ['home_security_header', 'home_code_has_no_key'];
     const guarded = results.slice(1).filter((item) => !homeIds.includes(item.attackId));
-    assert.equal(guarded.length, 11);
+    assert.equal(guarded.length, 13);
     assert.ok(guarded.every((item) => /HTTP 401, 자료 없이 거부됨/u.test(item.observed)));
     assert.ok(seen.every((req) => req.redirect === 'error'));
     const post = seen.find((req) => req.method === 'POST');
     assert.equal(post.body, '{}');
-    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'POST', 'PUT', 'PUT']);
+    assert.deepEqual(seen.filter((req) => req.method !== 'GET').map((req) => req.method).sort(), ['DELETE', 'POST', 'POST', 'POST', 'PUT', 'PUT']);
     assert.ok(seen.some((req) => req.path === '/api/memos/b0b0b0b0-0000-4000-8000-000000000001' && req.method === 'GET'));
     const ownerChange = seen.find((req) => req.method === 'PUT' && String(req.body).includes('owner_id'));
     assert.ok(ownerChange && !ownerChange.headers.Authorization);
     const bearer = seen.filter((req) => req.headers.Authorization);
     assert.equal(bearer.length, 2);
     for (const req of bearer) assert.match(req.headers.Authorization, /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/u);
-    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 11);
+    assert.equal(seen.filter((req) => !req.headers.Authorization).length, 13);
     // 원본 자료 API는 쿼리 없는 주소 그대로, 공개 키만 들고 직접 요청합니다.
     const direct = seen.find((req) => req.url === config.originalApiUrl);
     assert.ok(direct && direct.method === 'GET' && direct.headers.apikey && !direct.headers.Authorization);

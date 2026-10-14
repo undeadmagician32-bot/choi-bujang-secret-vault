@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import config from '../aleph.config.json' with { type: 'json' };
 import { createLoginVerifier } from './verify-login.mjs';
+import { gateDevice } from './device-gate.mjs';
 
 // 3단계 메모 API 공통 부분: 서버가 토큰을 검사해 얻은 userId만 믿고, 입력은 여기서 검사합니다.
 // 브라우저가 보낸 userId·role·owner_id 같은 값은 읽지 않습니다.
@@ -14,7 +15,8 @@ let admin;
 export const isUuid = (value) => typeof value === 'string' && UUID.test(value);
 
 // 통과하면 { userId, supabase }를 돌려주고, 거부하면 응답을 이미 보낸 뒤 null을 돌려줍니다.
-export async function authorize(request, response) {
+// 11단계: 로그인 확인 뒤에 서버 표로 기기 승인도 확인합니다(skipDevice는 기기 승인 요청 경로 전용).
+export async function authorize(request, response, { skipDevice = false } = {}) {
   response.setHeader('Cache-Control', 'no-store');
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY;
@@ -38,6 +40,7 @@ export async function authorize(request, response) {
     return null;
   }
   admin ??= createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (!skipDevice && !await gateDevice({ request, response, verified, supabase: admin })) return null;
   return { userId: verified.userId, supabase: admin };
 }
 
