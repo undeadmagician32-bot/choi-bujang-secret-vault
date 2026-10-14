@@ -6,10 +6,10 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 // 로그인한 A·B 토큰이 필요한 타인 접근 점검은 토큰을 코드에 둘 수 없어서 여기에 없습니다(미실행).
 const KNOWN_MEMO_ID = 'b0b0b0b0-0000-4000-8000-000000000001'; // B의 공개 가능한 시험 메모 id
 // 화면 코드(public/index.html)에도 있는 공개용 publishable key입니다. 비밀 키가 아닙니다.
-export const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
+const PUBLISHABLE_KEY = 'sb_publishable_XqK8DO1jcH7Chj0_wwE8DQ_--Qf-xOI';
 const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
-export function forgedToken(issuer) {
+function forgedToken(issuer) {
   const now = Math.floor(Date.now() / 1000);
   const head = b64({ alg: 'HS256', typ: 'JWT' });
   const body = b64({ iss: issuer, aud: 'authenticated', role: 'authenticated',
