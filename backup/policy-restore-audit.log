@@ -1,0 +1,1 @@
+{"at":"2026-10-14T01:56:24.958Z","action":"policy_restore","version":"816d0bd","outcome":"restored","failedAt":null,"files":[{"path":"src/detect.mjs","beforeSha256":"0065c9a594b6138c35bd4db9b84e78eede14f971e3c419cb1b81ead596b7c820","afterSha256":"9d7679182d77327b8be2041b10f30d92a371cfff238bf4fd878a37355b0392a8"}],"preRestoreDir":"backup/pre-restore/2026-10-14T01-56-24-807Z"}
