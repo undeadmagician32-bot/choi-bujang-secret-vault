@@ -94,6 +94,9 @@ export async function runAttackChecks(config) {
     // 메모 id를 알아도 로그인 없이는 읽을 수 없어야 합니다.
     ['anonymous_memo_read_known_id', '로그인 없이 알려진 메모 id로 읽으면 401', `/api/memos/${KNOWN_MEMO_ID}`, {}],
     // 없는 id에 보내서, 거부되지 않아도 실제 메모가 바뀌지 않게 합니다.
+    // 10단계: 로그인 없이는 사본 복원 경로도 거부되어야 합니다. 없는 id에 빈 본문을 보내 실제 메모가 만들어지지 않게 합니다.
+    ['anonymous_memo_restore', '로그인 없이 사본에서 메모를 복원하면 401', `/api/memo-restore/${randomUUID()}`,
+      { method: 'POST', body: '{}' }],
     ['anonymous_memo_owner_change', '로그인 없이 owner_id를 넣어 고치면 401', `/api/memos/${randomUUID()}`,
       { method: 'PUT', body: JSON.stringify({ title: 'x', body: 'y', owner_id: randomUUID() }) }],
   ];

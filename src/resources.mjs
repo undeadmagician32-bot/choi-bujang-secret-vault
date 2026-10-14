@@ -12,6 +12,7 @@ const ROUTE_RESOURCES = new Map([
   ['GET /api/memos/:id', RESOURCE_IDS.memo],
   ['PUT /api/memos/:id', RESOURCE_IDS.memo],
   ['DELETE /api/memos/:id', RESOURCE_IDS.memo],
+  ['POST /api/memo-restore/:id', RESOURCE_IDS.memo], // 10단계: 사본에서 본인 메모 한 건 복원
   ['GET /api/notes', RESOURCE_IDS.notice],
 ]);
 

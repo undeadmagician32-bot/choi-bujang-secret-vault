@@ -407,6 +407,39 @@
   - 반복 건수 구간·확신도 가중치·규칙 만료 1시간은 MITRE에 없는 연습용 값이고 이 연습 경보에 맞춰 정했습니다. 패턴 근거의 CAPEC·CWE 번호는 온라인으로 대조하지 않았습니다. 심판의 판정이 아닙니다.
   - `npm run bundle`은 실행하지 않았습니다(미실행).
 
+## 10단계 현재 상태: 백업에서 자료실을 되살립니다
+
+- 정책 비교(`src/restore-plan.mjs`, `npm run restore:plan`): `restore/policy-snapshot.json`의 검증된 정책 사본과 현재 시험 정책(규칙 이름, 허용 경로, 로그인 발급자, 원본 API 주소)의 차이만 읽기 전용으로 보여 줍니다. 복원할 버전·변경 범위·확인 번호가 먼저 나오고, 사본이 없거나 형식·digest가 틀리면 중단합니다.
+- 정책 복원(`src/restore-apply.mjs`, `npm run restore:apply -- --confirm=<확인 번호>`): 확인 번호가 계획과 같을 때만 `aleph.config.json`의 `allowedRoutes`·`identityProvider`·`originalApiUrl`을 사본 값으로 되돌립니다. 다른 설정 항목과 코드는 그대로이고, `ruleIds`가 다르면 자동 복원하지 않고 중단합니다. 감사 기록 `restore/audit.log`에는 덧붙이기만 합니다.
+- 메모 한 건 복원: `POST /api/memo-restore/:id`(메모 서비스 `vault.memo`, 로그인 필요). 비공개 사본 표 `memo_backups`와 ID·소유자·내용 해시를 대조한 한 건만 되살리고, 다른 메모는 건드리지 않으며 감사 표 `memo_restore_audit`에는 덧붙이기만 합니다. 자세한 내용은 위 「10단계 제작 3」, 복구 뒤 확인 순서는 「10단계 제작 4」를 봅니다.
+- 1~9단계의 기능과 규칙은 바꾸지 않았습니다. `src/resources.mjs`에 새 경로의 자원 ID만 추가했습니다.
+
+### 확인 순서
+
+1. `npm run test:restore`: pass 18. 정책 비교·복원 10건, 메모 복원 8건.
+2. `npm run decider:test`(통과 네 줄), `npm run fixture:7`, `npm run detect:test`(통과 여섯 줄), `npm run test:r5`(pass 2), `npm run test:package`(pass 3).
+3. 배포 뒤 확인은 「10단계 제작 4」의 표를 따릅니다.
+
+### 아직 확인하지 못한 것
+
+- 정책 사본(`restore/policy-snapshot.json`)을 만드는 기능과 실제 사본이 없어 `restore:plan`은 `SNAPSHOT_MISSING`으로 중단됩니다. 실제 정책 복원은 실행하지 않았습니다.
+- `docs/MEMO_BACKUPS.sql` 적용, 사본 표에 시험 계정 B의 가상 메모 넣기, 배포 주소에서 B 토큰·A 토큰으로 보낸 `POST /api/memo-restore/:id` 요청은 모두 미실행입니다.
+- 메모 사본을 만드는(백업 쓰기) 기능은 없습니다.
+- `restoreRoute`가 `/aleph.json`에 실리는지는 확인하지 못했습니다. `scripts/deployment-identity.mjs`는 `restoreRoute`를 아직 싣지 않습니다.
+
+## 10단계 저장점
+
+- 저장점: 10단계 「백업에서 자료실을 되살립니다」.
+- 지금 작동하는 기능
+  1. 검증된 정책 사본과 현재 시험 정책의 차이를 보여 주고, 확인 번호를 받은 뒤에만 설정 파일의 정책 항목을 되돌립니다. 사본이 없거나 검증에 실패하면 중단합니다.
+  2. 로그인한 본인의 메모 한 건을 비공개 사본에서 ID·소유자·내용 해시를 대조한 뒤 되살리고, 다른 메모와 감사 기록은 보존합니다.
+  3. 9단계 탐지, 8단계 구역, 7단계 추가 확인, 6단계 기기 규칙, 5단계까지의 기능은 그대로입니다.
+- 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 배포 주소에 실제 요청 14건을 보냅니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
+- 설정 대조 (`aleph.config.json`)
+  - `step`을 10으로 올렸고 `restoreRoute`를 `POST /api/memo-restore/:id`로 채웠습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`은 9단계와 같고 구현과 일치합니다. `allowedRoutes`에는 복원 경로를 넣지 않았습니다. `judgeIssuer`는 바꾸지 않았습니다.
+  - `src/decider.mjs`는 바꾸지 않았고 `RULE_IDS`의 여섯 규칙은 모두 코드에 있습니다.
+  - `src/attack-check.mjs`에 `anonymous_memo_restore`(로그인 없이 복원 경로에 보내면 401)를 더해 14건입니다. 이번 저장점에서 이 점검은 실행하지 않았습니다(미실행).
+
 ## 시작 틀의 자동 처리
 
 `vercel.json`은 정적 결과물 `public`을 배포하고 `X-Content-Type-Options: nosniff` 머리글을 붙입니다. 빌드 명령 `npm run build`는 Vercel이 제공하는 GitHub 저장소 소유자·이름, 커밋 SHA, 배포 URL을 검증하고 `public/aleph.json`을 생성합니다. 이 값이 없으면 빌드가 실패하므로, 성공한 것처럼 빈 주소를 내보내지 않습니다. `aleph.json`의 내용만으로 저장소 소유권이나 방어 성공을 인정하지 않습니다. 심판이 공개 저장소의 실제 커밋과 배포된 자료를 따로 대조해야 합니다.
@@ -420,3 +453,52 @@
 [AGENTS.md](AGENTS.md)를 먼저 읽히고 한 번에 한 제작 단위만 요청하세요. 2단계부터는 자료 보호를 구현할 때 `public/data.json`을 복사하는 1단계 빌드 흐름도 함께 바꿔야 합니다. 3단계 이후의 로그인, 허용 경로, 5단계의 원본 API 주소, 6단계 이후 정책 규칙은 해당 단계 원고와 계약에 맞춰 추가합니다. 비밀번호·토큰·서버 전용 키·실제 학생 기록을 코드, Git, 제출 묶음에 넣지 않습니다.
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
+
+## 10단계 제작 3: 사본에서 메모 한 건 복원
+
+- 서비스: 메모 서비스(자원 ID `vault.memo`). 경로: **`POST /api/memo-restore/:id`** (`api/memo-restore/[id].js`, 대조 규칙은 `src/memo-restore.mjs`). 로그인 토큰이 필요하고, 본문은 선택 항목 `{ "contentHash": "<64자 소문자 16진수>" }` 하나뿐입니다.
+- 비공개 가상 메모 사본은 Supabase 표 `public.memo_backups`, 감사 기록은 `public.memo_restore_audit`입니다. 만드는 SQL은 `docs/MEMO_BACKUPS.sql`이며 메모 본문은 들어 있지 않습니다. 두 표는 공개 권한을 모두 회수했고 서버 함수(전용 키)만 씁니다. 감사 표는 덧붙이기만 되고 수정·삭제·비우기는 트리거가 막습니다. 사본 행의 `content_hash`는 `src/memo-restore.mjs`의 `contentHashOf(title, body)`와 같은 값으로 사본을 만들 때 적습니다.
+- 복원 전 대조(하나라도 다르면 쓰지 않음): ① 사본의 메모 ID = 요청한 ID, ② 사본의 소유자 = 서버가 토큰으로 확인한 사용자, ③ 사본 내용으로 다시 계산한 해시 = 사본에 적힌 해시(요청이 `contentHash`를 주었다면 그 값과도 같아야 함). 남의 사본·없는 사본은 같은 404(`NOT_FOUND`), 해시가 다르면 409(`HASH_MISMATCH`, `BACKUP_INTEGRITY_FAILED`)입니다. 현재 메모가 다른 사람 소유로 남아 있으면 덮어쓰지 않습니다.
+- 쓰는 범위: 그 메모 한 행(없으면 추가, 있으면 제목·본문만 수정)과 감사 기록 덧붙이기뿐입니다. 다른 메모 행과 기존 감사 행은 읽지도 쓰지도 않습니다. 감사 기록을 남기지 못하면 복원하지 않습니다. 응답은 `200 { id, contentHash }`이며 메모 내용은 싣지 않습니다.
+- 확인한 것(가상 값, 메모리 store 시험): `npm run test:restore`의 `memo-restore` 8건. 시험 계정 B의 메모 한 건이 사본의 ID·소유자·해시 그대로 돌아오고, A가 B의 사본을 지정하면 404로 아무것도 쓰지 않으며, 다른 메모는 그대로입니다.
+- 확인하지 못한 것: 배포 주소에서 실제 시험 계정 B 토큰으로 보낸 요청, Supabase 표에 SQL을 적용한 상태, `aleph.config.json`의 `restoreRoute`·`allowedRoutes`에 이 경로를 싣는 일(저장점 단계에서 구현과 대조), 8단계 판정기 구역표(`src/decider.mjs`의 `ZONES`)에 이 경로 추가(엔진이 이 경로를 판정기로 보내는지 계약에 없어 바꾸지 않음).
+
+## 10단계 제작 4: 복구 뒤 1~9단계를 다시 확인하는 순서
+
+복구가 끝났다고 보려면 자료와 정책이 돌아왔는지, 이전에 막던 요청이 다시 거부되는지를 아래 순서로 직접 봅니다. 「상태」 칸은 실제로 실행한 것만 적습니다. 실행하지 않은 것은 **미실행**이며, 실행한 사람이 결과를 적을 때까지 바꾸지 않습니다. 로컬 시험은 가상 요청 연습이며 심판의 판정이 아닙니다.
+
+### 순서
+
+1. **정책 되돌리기** (사본이 있을 때): `npm run restore:plan`으로 복원할 버전과 바뀔 항목을 읽고, 맞으면 출력의 확인 번호로 `npm run restore:apply -- --confirm=<확인 번호>`를 실행합니다. 끝난 뒤 `npm run restore:plan`을 다시 실행해 「차이 없음」이 나와야 정책이 돌아온 것입니다. `ruleIds` 차이로 중단되면 `src/decider.mjs`를 먼저 사본과 맞춥니다.
+2. **자료 되돌리기**: `docs/MEMO_BACKUPS.sql`이 적용되어 있고 사본 표에 시험 계정 B의 가상 메모가 있을 때, 배포 뒤 B로 로그인한 요청 `POST /api/memo-restore/<메모 ID>`가 200을 돌려주고 `GET /api/memos/<같은 ID>`의 제목·본문 해시(`contentHashOf`)가 사본과 같아야 자료가 돌아온 것입니다. 같은 요청을 A 토큰으로 보내면 404여야 합니다.
+3. **재배포**: 정책 파일을 되돌렸으면 다시 배포해야 반영됩니다. 배포가 끝난 뒤에만 4~5를 합니다.
+4. **로컬 명령** (배포 없이 실행): 아래 표의 명령을 위에서부터 실행합니다.
+5. **배포 주소 점검**: 표의 「배포」 항목을 시크릿 창과 A·B 두 계정으로 보냅니다. `npm run bundle`은 배포 주소에 실제 요청 14건(1·3·5·10단계 점검)을 보내고 결과를 `artifacts/submission.json`에 적습니다. 이 파일과 `bundle-notes.json`은 커밋하지 않습니다.
+6. **기록**: 실행한 항목은 날짜와 결과를 상태 칸에 적고, 실행하지 못한 항목은 미실행으로 남깁니다. 실패한 항목은 첫 오류만 적고 한 가지씩 고칩니다.
+
+### 단계별 정상·금지 요청
+
+| 단계 | 정상 요청(유지되어야 함) | 금지 요청(거부되어야 함) | 확인 방법 | 상태 |
+|---|---|---|---|---|
+| 1 | `/`가 로그인 폼으로 열림 | 비로그인 `/data.json`에서 가상 메모 확인 표시가 보이지 않음 | 배포: `npm run bundle`의 `anonymous_data_json` | 미실행 |
+| 2 | 로그인 뒤 가상 메모가 보임 | 배포 파일·GitHub 최신 파일에서 `실습용 가[상]` 검색 결과 없음 | 배포: 「가상 메모 문장 검색 확인」 절차 | 미실행 |
+| 3 | A 로그인 뒤 메모 목록 200 | 비로그인·위조 토큰의 `/api/notes`, `/api/memos` 다섯 경로가 401 | 배포: `npm run bundle`의 `anonymous_*`, `forged_token_*` | 미실행 |
+| 4 | A가 자기 메모 읽기·수정 200 | B가 A의 메모를 읽기·수정·삭제하면 404 | 배포: 두 계정, B 로그인 뒤 A 메모 주소로 `fetch` | 미실행 |
+| 5 | 화면이 `/api/memos`로 자료를 읽음 | 공개 키로 원본 자료 API 직접 요청이 401·403, 첫 화면 코드에 공개 키 없음 | 배포: `npm run bundle`의 `direct_original_api_anon`, `home_code_has_no_key`, `home_security_header` | 미실행 |
+| 5 | `/aleph.json`에 `allowedRoutes`·`originalApiUrl`이 실려 있음 | — | 배포: `/aleph.json` 열기 | 미실행 |
+| 5·정책 | — | 정책 사본과 현재 정책의 차이 없음 | `npm run restore:plan` | 사본이 없어 `SNAPSHOT_MISSING`으로 중단됨(2026-10-14, 로컬). 사본을 만든 뒤 미실행 |
+| 6 | 등록 기기의 읽기 요청 `allow` | 미등록 기기 요청 `deny`(`device_not_registered`) | `npm run decider:test` | 통과 네 줄(2026-10-14, 로컬) |
+| 7 | 다시 확인한 복합 이상 접속 `allow`, 정상 사건 `allow` | 복합 이상 접속(0~5시 + 처음 보는 네트워크 + 짧은 시간 많은 읽기) `step_up` | `npm run decider:test`, `npm run fixture:7` | 통과 네 줄, `allow`·`step_up`(2026-10-14, 로컬) |
+| 8 | A의 메모 읽기·수정 `allow` | 공지 수정 `deny`, 쿼리·`/notes/:id/export`·DELETE `route_not_allowed`, 학생 공지 수정 403, 비로그인 공지 수정 401 | `npm run decider:test`에는 이 경우가 들어 있지 않아 저장된 시험이 없음. 서버 쪽은 배포에서 확인 | 미실행 |
+| 8 | 배포의 `/api/memos`와 `/api/notes` 응답 머리글 `X-Resource-Id`가 서로 다름 | — | 배포: 개발자 도구 네트워크 탭 | 미실행 |
+| 9 | 정상 조회 30건, 정확히 120건은 `observe` | 10분 안 121건 이상은 `propose_revocation`(`burst_read`) | `npm run detect:test` | 통과 여섯 줄(2026-10-14, 로컬) |
+| 9 | — | 실제 접속 회수 | 운영 반 엔진과의 연결이 필요함 | 미실행 |
+| 로컬 묶음 | — | — | `npm run test:r5`, `npm run test:package` | pass 2, pass 3(2026-10-14, 로컬) |
+| 10 | B의 사본 한 건 복원, 다른 메모 보존 | A가 B의 사본을 지정하면 404, 해시·소유자·ID 불일치 거부, 정책 사본 없음·digest 불일치 중단 | `npm run test:restore` | pass 18(2026-10-14, 로컬, 가상 값·메모리 저장소) |
+| 10 | 배포에서 B의 메모 복원 200 | 배포에서 A 토큰으로 같은 요청 404 | 배포: 순서 2 | 미실행 |
+
+### 읽는 법
+
+- 「통과(로컬)」는 가상 요청이나 메모리 저장소로 한 연습이며, 배포된 서버·실제 DB·두 계정으로 한 시험이 아닙니다. 같은 줄의 「배포」 확인이 끝나기 전까지 그 단계가 복구됐다고 쓰지 않습니다.
+- 4단계의 「B가 A의 메모를 요청하면 404」와 10단계의 「A가 B의 사본을 요청하면 404」는 두 계정으로 보낸 실제 요청이 있어야 확인됩니다. 지금은 둘 다 미실행입니다.
+- 8단계 판정기 구역 규칙을 다시 볼 저장된 시험이 없습니다. 이 칸을 채우려면 별도의 시험을 추가하거나 배포에서 직접 요청해야 합니다.
