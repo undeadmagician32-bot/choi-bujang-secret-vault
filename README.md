@@ -456,7 +456,7 @@
 
 ### 아직 확인하지 못한 것
 
-- 위 3번의 배포 확인과 `docs/DEVICES.sql` 적용은 하지 않았습니다(미실행). 서버가 실제 `Set-Cookie`를 보내는지도 확인하지 못했습니다.
+- 2026-10-14 학생이 직접 한 확인(학생이 알려 준 결과이며 이 저장소에서 다시 실행하지 않았습니다): `docs/DEVICES.sql`을 Supabase SQL Editor에서 실행해 `rls_on = true`가 나왔습니다. 배포 주소에서 시험 계정 A로 로그인해 `/api/memos`를 보내면 승인 전 403 `DEVICE_NOT_APPROVED`(`state: none`), 「이 기기 승인 요청」 뒤 403(`state: pending`), 운영자가 SQL로 `approved`로 바꾼 뒤 화면에 「서버가 등록 기기로 확인함」과 메모 화면이 열리고 같은 요청이 200이었습니다. 다른 시크릿 창에서 같은 계정으로 로그인하면 승인이 따라오지 않고 403이었습니다. 서버 응답 머리글의 `Set-Cookie` 값과 계정 B로 한 확인은 하지 않았습니다(미실행). 승인 뒤 열린 화면의 세부 동작은 학생이 눈으로 본 결과입니다.
 - `/api/device`를 `allowedRoutes`와 `src/resources.mjs`에 넣지 않았습니다. 자료 경로가 아니라 로그인·복원 경로처럼 두었으며, 배포에서 이 경로가 막히는지는 확인하지 못했습니다.
 - 기존 로그인 세션 토큰은 여전히 `localStorage`(`vault-session`)에 저장됩니다. 이번 단계에서 바꾸지 않았습니다.
 - 기기 승인을 판정기·반 엔진과 연결하지 않았습니다.
@@ -471,7 +471,7 @@
 - 다시 실행하는 방법: 위 「확인 순서」. 제출 묶음은 `bundle-notes.json`을 이번 단계 내용으로 고친 뒤 `npm run bundle`을 실행하며, 이 명령은 배포 주소에 실제 요청 16건을 보냅니다. 두 파일(`bundle-notes.json`, `artifacts/submission.json`)은 커밋하지 않습니다.
 - 설정 대조 (`aleph.config.json`)
   - `step`을 11로 올렸습니다. `identityProvider`, `allowedRoutes`, `originalApiUrl`, `restoreRoute`는 10단계와 같고 구현과 일치합니다. `judgeIssuer`는 바꾸지 않았습니다.
-  - `src/attack-check.mjs`에 `anonymous_device_status`, `anonymous_device_request`(로그인 없이 `/api/device`에 보내면 401)를 더해 16건입니다. 승인 전 자료 거부(403)는 로그인한 계정이 필요해 이 점검에 없습니다(직접 확인, 미실행).
+  - `src/attack-check.mjs`에 `anonymous_device_status`, `anonymous_device_request`(로그인 없이 `/api/device`에 보내면 401)를 더해 16건입니다. 승인 전 자료 거부(403)는 로그인한 계정이 필요해 이 점검에 없고, 2026-10-14 학생이 직접 확인했습니다(위 「아직 확인하지 못한 것」). `npm run bundle`은 같은 날 배포 뒤 다시 실행해 16건이 모두 기대대로 거부되었습니다(커밋 `6fbc888`).
 
 ## 시작 틀의 자동 처리
 
