@@ -189,7 +189,7 @@
 | `POST /api/auth/refresh` | `{refresh_token}` → 새 세션. 만료·취소된 토큰이면 401 |
 | `POST /api/auth/logout` | `Authorization: Bearer` 토큰의 로그인 세션을 서버 전용 키로 취소. 토큰이 없으면 401 |
 
-- 화면은 서버가 돌려준 세션을 이 브라우저의 `localStorage`에 보관하고(비밀번호는 보관하지 않음), 만료 1분 전이면 `/api/auth/refresh`로 갱신한 뒤 자료를 요청합니다.
+- (11단계에서 바뀜: 지금은 탭 메모리에만 두고 저장소에 쓰지 않습니다. 아래 「11단계 현재 상태」 참고) 화면은 서버가 돌려준 세션을 이 브라우저의 `localStorage`에 보관하고(비밀번호는 보관하지 않음), 만료 1분 전이면 `/api/auth/refresh`로 갱신한 뒤 자료를 요청합니다.
 - **Vercel 환경변수에 `SUPABASE_PUBLISHABLE_KEY`가 필요합니다.** 로그인 도구용 공개 키이며, 기존 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`와 같은 곳에 둡니다. 없으면 로그인이 "서버의 로그인 설정이 아직 없습니다"로 실패하고, 환경변수를 바꾼 뒤에는 다시 배포해야 반영됩니다.
 - 서버 함수의 로그인 검사, 소유자 검사, 서버 전용 설정(`SUPABASE_URL`, `SUPABASE_SECRET_KEY`)은 그대로입니다.
 - DB: 학습 DB의 `public.memos`에서 `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다(`docs/MEMOS_REVOKE.sql`). 서버 전용 키가 쓰는 `service_role`은 그대로이고, RLS와 소유자 정책 네 개도 그대로 남겼습니다. 4단계에서 `authenticated`에 주었던 직접 접근은 이제 닫혀 있고, 메모는 서버 함수를 통해서만 읽고 쓸 수 있습니다.
@@ -458,7 +458,7 @@
 
 - 2026-10-14 학생이 직접 한 확인(학생이 알려 준 결과이며 이 저장소에서 다시 실행하지 않았습니다): `docs/DEVICES.sql`을 Supabase SQL Editor에서 실행해 `rls_on = true`가 나왔습니다. 배포 주소에서 시험 계정 A로 로그인해 `/api/memos`를 보내면 승인 전 403 `DEVICE_NOT_APPROVED`(`state: none`), 「이 기기 승인 요청」 뒤 403(`state: pending`), 운영자가 SQL로 `approved`로 바꾼 뒤 화면에 「서버가 등록 기기로 확인함」과 메모 화면이 열리고 같은 요청이 200이었습니다. 다른 시크릿 창에서 같은 계정으로 로그인하면 승인이 따라오지 않고 403이었습니다. 서버 응답 머리글의 `Set-Cookie` 값과 계정 B로 한 확인은 하지 않았습니다(미실행). 승인 뒤 열린 화면의 세부 동작은 학생이 눈으로 본 결과입니다.
 - `/api/device`를 `allowedRoutes`와 `src/resources.mjs`에 넣지 않았습니다. 자료 경로가 아니라 로그인·복원 경로처럼 두었으며, 배포에서 이 경로가 막히는지는 확인하지 못했습니다.
-- 기존 로그인 세션 토큰은 여전히 `localStorage`(`vault-session`)에 저장됩니다. 이번 단계에서 바꾸지 않았습니다.
+- (정정) 로그인 세션 토큰은 이제 `localStorage`에 저장하지 않고 탭 메모리에만 둡니다. 새로 고치면 다시 로그인해야 하며, 예전 버전이 남긴 `vault-session` 값은 접속할 때 한 번 지웁니다. 제작 2 점검의 `S11_KEY_EXPOSED`를 받고 고쳤으며, 그 점검기가 이 저장소에 없어 원인은 추정입니다. 같은 오류가 사라졌는지는 확인하지 못했습니다(미실행).
 - 기기 승인을 판정기·반 엔진과 연결하지 않았습니다.
 
 ## 11단계 저장점

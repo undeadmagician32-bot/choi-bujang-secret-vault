@@ -30,11 +30,11 @@ test('home page links the manifest, shows the approval caveat, and adds no brows
   assert.match(html, /id="offline-banner"/u);
   assert.match(html, /기기 승인[\s\S]*확인되지 않음/u);
   assert.match(html, /설치했다는 표시는 기기를 믿을 근거가 아닙니다/u);
-  // 기존 로그인 세션 저장(vault-session) 외에 새 저장소 사용이 늘지 않았는지: localStorage 쓰기는 기존 한 곳뿐입니다.
-  assert.equal((html.match(/localStorage\.setItem/gu) ?? []).length, 1);
+  // 11단계: 로그인 토큰을 브라우저 저장소에 쓰지 않습니다. 예전 vault-session 값을 지우는 removeItem만 남습니다.
+  assert.doesNotMatch(html, /localStorage.(setItem|getItem)|sessionStorage|indexedDB|document.cookie/u);
+  assert.equal((html.match(/localStorage.removeItem/gu) ?? []).length, 1);
   // 11단계: 기기 승인 코드는 쿠키·저장소를 직접 만지지 않고, 승인 요청은 /api/device로만 보냅니다.
   assert.doesNotMatch(html, /document\.cookie/u);
   assert.match(html, /deviceCall\('POST'/u);
   assert.doesNotMatch(html, /deviceState\s*=\s*['"]approved['"]/u);
-  assert.doesNotMatch(html, /sessionStorage|indexedDB/u);
 });

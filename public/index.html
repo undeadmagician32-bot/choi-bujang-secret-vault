@@ -125,22 +125,13 @@ const showNotesMessage = message => {
   item.textContent = message;
   list.replaceChildren(item);
 };
-// 로그인 세션: 서버가 돌려준 토큰을 이 브라우저에 보관합니다. 비밀번호는 보관하지 않습니다.
+// 로그인 세션: 서버가 돌려준 토큰은 이 탭의 메모리에만 둡니다(11단계). 브라우저 저장소에는 쓰지 않으므로 새로 고치면 다시 로그인합니다.
+// 예전 버전이 남긴 vault-session 값이 이 브라우저에 있으면 지웁니다. 비밀번호는 보관하지 않습니다.
 const SESSION_KEY = 'vault-session';
 let authSession = null;
 let refreshing = null;
-const readStored = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SESSION_KEY));
-    return stored && typeof stored.access_token === 'string' && typeof stored.refresh_token === 'string'
-      && Number.isFinite(stored.expires_at) ? stored : null;
-  } catch { return null; }
-};
-const writeStored = stored => {
-  try {
-    if (stored) localStorage.setItem(SESSION_KEY, JSON.stringify(stored));
-    else localStorage.removeItem(SESSION_KEY);
-  } catch { /* 저장소를 쓸 수 없으면 이 탭에서만 유지됩니다 */ }
+const clearLegacyStored = () => {
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* 저장소를 쓸 수 없어도 화면은 그대로 동작합니다 */ }
 };
 const authPost = async (path, body, token) => {
   const headers = { 'Content-Type': 'application/json' };
@@ -152,7 +143,7 @@ const authPost = async (path, body, token) => {
   try { data = await response.json(); } catch { /* 본문 없음 */ }
   return { response, data };
 };
-const setSession = next => { authSession = next; writeStored(next); render(next); };
+const setSession = next => { authSession = next; render(next); };
 const refreshSession = () => {
   if (!authSession) return Promise.resolve(null);
   refreshing ??= (async () => {
@@ -491,7 +482,7 @@ standalone.addEventListener?.('change', renderDevice);
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => { /* 등록하지 못해도 화면은 그대로 동작합니다 */ });
 }
-authSession = readStored();
+clearLegacyStored();
 render(authSession);
 </script>
 </body>
