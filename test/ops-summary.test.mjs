@@ -107,3 +107,23 @@ test('the page draws only server values with textContent and never reads memo fi
   assert.equal(/\.(body|title|content)\b/u.test(ops), false);
   assert.match(ops, /\/api\/ops\/summary/u);
 });
+
+test('the response carries the masked server record, identical to what the server logs', async () => {
+  const summary = await buildOpsSummary({ userId: B, store: fakeStore(), ...fixed });
+  assert.deepEqual(summary.serverRecord, opsLogRecord({ ...summary, serverRecord: undefined }));
+  assert.equal(summary.serverRecord.id, summary.recordId);
+  assert.equal(summary.serverRecord.rules, summary.rules.count);
+  assert.deepEqual(summary.serverRecord.devices, [summary.revocation.devices.pending, summary.revocation.devices.approved, summary.revocation.devices.revoked]);
+  assert.equal(summary.serverRecord.versions, summary.restore.versions.count);
+  assert.equal(summary.serverRecord.audit, summary.restore.audit.total);
+  const text = JSON.stringify(summary.serverRecord);
+  for (const forbidden of [SECRET_BODY, A, B, 'memo-b', 'dev-b1']) assert.equal(text.includes(forbidden), false);
+});
+
+test('the page shows the masked record and compares it with the numbers on screen', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const ops = html.slice(html.indexOf('// 탈환 작전실(12단계)'), html.indexOf('// 기기 승인(11단계)'));
+  assert.match(ops, /data\.serverRecord/u);
+  assert.match(ops, /화면과 일치/u);
+  assert.match(ops, /응답에 없음/u);
+});

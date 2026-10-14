@@ -2,6 +2,8 @@
 
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 포함된 메모 네 건은 가상 자료입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
+> **출처 한눈에 보기** — 요청의 신원·기기·경로를 확인하고 판정기·탐지 함수를 부르는 **ALEPH SDP 엔진은 수업에서 제공한 것(사용)이며 이 저장소에 코드가 없습니다.** 시작 틀(빈 뼈대·계약 문서·연습 스크립트·연습 경보 자료)도 제공받은 것이고, 판정기 규칙·탐지 규칙·접속 앱·자료실·작전실·확인표는 학생 몫입니다. 외부 라이브러리와 서비스, 코딩 도구의 도움까지 나눈 표는 아래 「12단계 설치·실행·중지·복구 안내」의 「기준과 출처」에 있습니다.
+
 ## 학생이 하는 일: 세 걸음
 
 1. GitHub 계정을 만듭니다.
@@ -484,10 +486,15 @@
 |---|---|---|
 | ALEPH SDP 엔진(제공, 저장소 밖) | 신원·기기·경로 확인, 판정기 호출, 재인증, 접속 회수 집행, 운영 등록부, 심판 접수 | 없음 (계약 문서만 저장소에 있음) |
 | 시작 틀(제공, 첫 커밋 `8e3e791`에 있던 것) | 판정기·탐지 함수의 빈 뼈대와 계약 문서, 로컬 연습 스크립트, 로그인 토큰 검사 도우미, 제출 묶음 스크립트, 배포 정보 기록, 패키지 양식, 연습 경보 자료 | `docs/DECIDER_REQUEST.md`, `docs/DETECT_EVENTS.md`, `scripts/decider-test.mjs`, `scripts/fixture-7.mjs`, `scripts/detect-test.mjs`, `scripts/bundle.mjs`, `scripts/deployment-identity.mjs`, `scripts/xdr-run.mjs`, `src/verify-login.mjs`, `package/`, `xdr/fixtures/` |
-| 학생 몫: 판정기 | 6~8단계 규칙(`RULE_IDS` 여섯 개) | `src/decider.mjs` |
-| 학생 몫: 탐지 규칙 | 9단계 다량 조회 탐지·회수 제안, 보너스 `xdr/` 판정·대응 | `src/detect.mjs`, `xdr/*/decide.mjs`, `read-alerts.mjs`, `respond.mjs` |
+| 학생 몫: 판정기 | 6~8단계 규칙(`RULE_IDS` 여섯 개). 파일의 빈 뼈대(`decide` 이름·인자·응답 다섯 항목)는 시작 틀이 준 것이고 규칙 구현은 학생이 채웠습니다 | `src/decider.mjs` |
+| 학생 몫: 탐지 규칙 | 9단계 다량 조회 탐지·회수 제안(빈 뼈대는 시작 틀, 규칙 구현은 학생), 보너스 `xdr/` 판정·대응(연습 경보 자료 `xdr/fixtures/`는 제공) | `src/detect.mjs`, `xdr/*/decide.mjs`, `read-alerts.mjs`, `respond.mjs` |
 | 학생 몫: 접속 앱 | 로그인·세션 화면, 설치형 웹앱, 기기 승인 | `public/index.html`, `public/sw.js`, `public/manifest.webmanifest`, `public/offline.html`, `api/auth/`, `api/device/`, `src/device-gate.mjs`, `src/auth-api.mjs` |
 | 학생 몫: 자료실 | 메모 API(소유자 검사), 가상 메모 읽기, 사본 복원, 정책 복원, 작전실·확인표 | `api/memos/`, `api/notes.js`, `api/memo-restore/`, `api/ops/`, `src/memo-api.mjs`, `src/memo-restore.mjs`, `src/restore-*.mjs`, `src/ops-summary.mjs`, `src/matrix.mjs`, `docs/*.sql` |
+
+| 외부 라이브러리(내려받아 사용) | `@supabase/supabase-js` 2.117.2(로그인·DB 접근), `jose` 6.2.12(토큰 검사). 버전은 `package.json`, 설치 내용은 `package-lock.json` | `package.json` |
+| 외부 서비스(사용) | GitHub(저장소), Vercel(배포·서버 함수·함수 로그), Supabase(로그인·DB) | `vercel.json`, `aleph.config.json` |
+| 근거 자료(인용) | 보너스 `xdr/` 판정의 근거로 MITRE ATT&CK 번호(T1110, T1190)와 CAPEC·CWE 번호를 적었고 온라인으로 대조하지 않았습니다. 건수 구간·확신도 가중치는 학생이 정한 연습용 값입니다 | `xdr/*/patterns.json` |
+| 코딩 도구(작성 도움) | 학생 몫 코드는 코딩 도구(Claude Code)의 도움을 받아 작성했고 학생이 확인·커밋했습니다. 커밋 37개 중 16개(보너스 xdr-01 이후)에 `Co-Authored-By` 줄이 있고, 그 이전 커밋에는 이 줄이 없어 이 기록만으로는 도움 여부를 가리지 못합니다. 코딩 도구는 ALEPH SDP 엔진이 아닙니다 | `git log` |
 
 시작 틀 파일도 학생이 단계마다 고친 곳이 있습니다(예: `scripts/deployment-identity.mjs`, `src/attack-check.mjs`). 위 표는 처음 출처를 기준으로 합니다.
 
@@ -528,7 +535,7 @@ npm install
 2. **탐지 규칙** (학생 몫, 가상 사건): `npm run detect:test`(「통과」 여섯 줄). 엔진의 사건 전달·접속 회수는 연결·시험하지 않았습니다(미실행). 보너스 연습 경보는 `npm run xdr:run -- brute-force`, `npm run xdr:run -- web-injection`입니다.
 3. **자료실·접속 앱 코드 시험**: `npm run test:r5`(2), `npm run test:package`(3), `npm run test:device`(6), `npm run test:pwa`(3), `npm run test:restore`(18), `npm run test:ops`(7), `npm run test:matrix`(9). 모두 가상 값과 메모리 저장소로 한 연습입니다. 화면 파일만 만들 때는 `npm run build -- --local`입니다.
 4. **접속 앱 (배포 주소, 시크릿 창)**: A로 로그인하면 승인 전에는 자료가 없고 `/api/memos`가 403입니다. 「이 기기 승인 요청」은 「승인 대기 중」만 만듭니다. 운영자가 `docs/DEVICES.sql`의 `update`로 승인한 뒤 「상태 다시 확인」을 누르면 메모 화면과 탈환 작전실이 열립니다. 세션 토큰은 탭 메모리에만 있어 새로 고치면 다시 로그인합니다.
-5. **탈환 작전실**: 작전실 아래의 「기록 번호」가 Vercel 함수 로그 `OPS_SUMMARY`의 같은 번호와 수치가 같은지 맞춥니다. 탐지·회수 집행·정책 사본 비교는 「미실행」으로 보여야 합니다.
+5. **탈환 작전실**: 작전실의 「가린 서버 기록」 카드(응답의 `serverRecord`, 수치와 상태만 있고 식별자·메모 본문 없음)가 화면 카드의 수치와 모두 「일치」로 나와야 합니다. 이 기록은 Vercel 함수 로그 `OPS_SUMMARY`에 남는 값과 같아서, 「기록 번호」로 로그의 같은 줄을 찾아 맞춰 볼 수도 있습니다. 탐지·회수 집행·정책 사본 비교는 「미실행」으로 보여야 합니다.
 6. **확인표**: `npm run matrix:run`(로그인 없이 보낼 수 있는 항목과 로컬 항목). 결과는 `artifacts/matrix.md`입니다. 계정 A·B 항목은 위 환경변수를 설정해야 실행되고, 메모·감사 기록을 쓰는 복원 항목은 `-- --include-writes`를 붙여야 합니다. 총공세 41종은 이 표로 통과시키지 않습니다(미실행 41).
 7. **제출 묶음**: `bundle-notes.json`에 이번 단계에서 한 일을 적은 뒤 `npm run bundle`을 실행합니다. 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.
 
@@ -556,7 +563,7 @@ npm install
 
 - 저장점: 12단계 「탈환 작전실을 완성합니다」(제작 1~3).
 - 지금 작동하는 기능
-  1. 승인된 기기에서 열리는 「탈환 작전실」이 `GET /api/ops/summary`의 판정기 규칙·탐지·회수 상태·복구 버전 요약을 보여 주고, 서버 응답으로 확인한 것과 미실행을 구분합니다. 서버 기록 `OPS_SUMMARY`의 같은 기록 번호·수치와 맞춰 볼 수 있고, 메모 본문은 표시하지 않습니다.
+  1. 승인된 기기에서 열리는 「탈환 작전실」이 `GET /api/ops/summary`의 판정기 규칙·탐지·회수 상태·복구 버전 요약을 보여 주고, 서버 응답으로 확인한 것과 미실행을 구분합니다. 응답에 함께 싣는 「가린 서버 기록」(`serverRecord`)을 화면에 보이고 화면 수치와 칸마다 대조하며, 서버 로그 `OPS_SUMMARY`와 같은 값입니다. 메모 본문은 표시하지 않습니다.
   2. `npm run matrix:run`이 1~11단계의 정상·금지 요청을 실제로 보내(또는 함수를 불러) 기대·실제 결과·요청 ID·확인 시각을 `artifacts/matrix.md`에 남깁니다. 실행하지 않은 항목과 총공세 41종은 미실행으로 남고 통과로 세지 않습니다.
   3. 위 「12단계 설치·실행·중지·복구 안내」. 1~11단계의 기능과 규칙은 바꾸지 않았습니다.
 - 다시 실행하는 방법: `npm run test:ops`(7), `npm run test:matrix`(9)와 기존 시험은 위 「실행」 순서. 제출 묶음은 `bundle-notes.json`을 12단계 내용으로 고친 뒤 `npm run bundle`을 실행하며 배포 주소에 실제 요청 16건을 보냅니다. `bundle-notes.json`과 `artifacts/`는 커밋하지 않습니다.

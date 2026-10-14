@@ -72,6 +72,8 @@ export async function buildOpsSummary({ userId, store, now = () => new Date(), r
       policySnapshot: { status: 'not_run' },
     },
   };
+  // 가린 서버 기록을 응답에도 같이 싣습니다. 서버 로그(OPS_SUMMARY)에 남는 값과 같은 객체입니다.
+  summary.serverRecord = opsLogRecord(summary);
   return summary;
 }
 

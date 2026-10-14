@@ -399,7 +399,26 @@ const renderOps = data => {
       ['정책 사본 비교', `${BADGES[restore.policySnapshot.status]} (로컬 restore:plan)`],
     ]),
   );
-  opsMeta.textContent = `기록 번호 ${data.recordId} · ${data.generatedAt} · 서버 기록 OPS_SUMMARY의 같은 번호와 수치를 맞춰 볼 수 있습니다. 메모 본문은 이 화면에 없습니다.`;
+  // 가린 서버 기록: 서버가 응답에 함께 싣고 서버 로그(OPS_SUMMARY)에도 남기는 같은 값입니다(수치·상태만, 식별자·본문 없음).
+  // 위 카드에 보이는 수치를 다시 모아 이 기록과 한 칸씩 비교합니다. 이 화면이 기록을 고치거나 값을 채우지 않습니다.
+  const record = data.serverRecord;
+  const shown = {
+    id: data.recordId, rules: rules.count, detection: detection.status, revocation: revocation.status,
+    devices: dev ? [dev.pending, dev.approved, dev.revoked] : null, restore: restore.status,
+    versions: restore.versions ? restore.versions.count : null, audit: audit ? audit.total : null,
+    restored: audit ? (audit.byOutcome.restored ?? 0) : null,
+  };
+  const labels = { id: '기록 번호', rules: '규칙 수', detection: '탐지 상태', revocation: '회수 상태', devices: '기기 수(대기·승인·회수)',
+    restore: '복구 상태', versions: '사본 수', audit: '복원 기록 건수', restored: '복원 완료 건수' };
+  const recordRows = record && typeof record === 'object'
+    ? Object.keys(labels).map(key => {
+      const same = JSON.stringify(record[key] ?? null) === JSON.stringify(shown[key]);
+      return [labels[key], `${JSON.stringify(record[key] ?? null)} · ${same ? '화면과 일치' : `화면과 다름 (화면 ${JSON.stringify(shown[key])})`}`];
+    })
+    : [['가린 서버 기록', '응답에 없음 (대조할 수 없음)']];
+  const allSame = record && typeof record === 'object' && Object.keys(labels).every(key => JSON.stringify(record[key] ?? null) === JSON.stringify(shown[key]));
+  opsCards.append(opsCard('가린 서버 기록 (로그 OPS_SUMMARY와 같은 값)', allSame ? 'verified' : 'failed', recordRows));
+  opsMeta.textContent = `기록 번호 ${data.recordId} · ${data.generatedAt} · ${allSame ? '화면 수치와 가린 서버 기록이 모두 일치합니다.' : '화면 수치와 가린 서버 기록이 일치하지 않는 칸이 있습니다.'} 메모 본문은 이 화면에 없습니다.`;
 };
 const loadOps = async () => {
   opsError.hidden = true;
