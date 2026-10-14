@@ -1,5 +1,101 @@
 # BYTE BACK 방어전 시작 틀 R5
 
+## 10단계 요약: 백업에서 자료실을 되살립니다
+
+기록일 2026-10-13(시각은 UTC, 한국 시각은 +9시간). 아래 「확인한 사실」과 「복구 뒤 재시험」에는 실제로 실행하거나 학생이 캡처·로그로 보여 준 것만 적었습니다. 확인하지 못한 것은 맨 아래 별도 항목에 있습니다.
+
+### 확인한 사실
+
+- **복구 경로**: `POST /api/memos/restore/:id`. `aleph.config.json`의 `restoreRoute`와 `allowedRoutes`에 같은 값이 있고, 배포된 `/aleph.json`에도 같은 값이 실립니다(2026-10-13 확인, 배포 커밋 `2b44c44`). 구현은 `api/memos/restore/[id].js`입니다.
+- **사본 위치**: Supabase 테이블 `public.memos_backup`(id, owner_id, title, body, content_sha256). 메모를 새로 만들 때 서버 함수가 덧붙이고(이미 있으면 덮어쓰지 않아 가장 이른 내용이 남음), 그 전의 메모는 `docs/MEMOS_BACKUP.sql` 2번으로 한 번 일괄 사본을 떴습니다. 복원 감사 기록은 `public.memos_restore_audit`(덧붙이기만)입니다. 두 테이블 모두 anon·authenticated 권한이 없고 서버 키는 SELECT·INSERT만 갖습니다(SQL 실행은 학생이 했고 권한 표는 학생 보고).
+- **ID·소유자·내용 해시 대조 방식**(복원 요청 하나의 처리 순서):
+  1. 로그인 확인(없으면 401)
+  2. ID 형식 확인(틀리면 400)
+  3. 사본에서 `id`와 로그인한 사용자의 `owner_id`가 모두 같은 한 건만 읽기(없거나 남의 것이면 같은 404)
+  4. 사본의 제목·본문으로 `sha256(제목 || 0x00 || 본문)`을 다시 계산해 저장된 `content_sha256`과 비교(다르면 409, 아무것도 쓰지 않음)
+  5. 그 한 건만 되돌리기(지워졌으면 같은 ID로 다시 만들기, 소유자는 바꾸지 않음)
+  6. 다시 읽어 ID·소유자·해시가 사본과 같은지 대조(다르면 500)
+  7. 감사 기록 덧붙이기
+  8. 200 `{ id, restored, contentSha256, contentHash }`(두 해시는 같은 값)
+- **복원 뒤 다시 읽어 확인합니다.** 200은 6번 대조를 통과한 경우에만 나옵니다(코드, 가짜 DB 시험 `npm run memo:restore:test` pass 12).
+- **정책 되돌리기 도구**: 대상은 판정기 정책 `src/decider.mjs`를 포함한 정책 파일 여섯 개 전체입니다(`aleph.config.json`, `vercel.json`, `src/decider.mjs`, `src/detect.mjs`, `src/resources.mjs`, `docs/MEMOS_RLS.sql`). 검증한 사본 `backup/policy-snapshot.json`(버전 `816d0bd`, 2026-10-13 11:43 UTC에 만듦)을 다시 읽어 비교하고, 사본이 없거나 검증에 실패하면 중단하며, 실행 전에 복원할 버전과 바뀔 파일을 보여 주고 `--confirm <버전>`을 적어야만 쓰고, 로컬 파일만 읽고 쓰며 운영 서버에는 요청하지 않습니다(`npm run policy:diff`, `npm run policy:restore`, 시험 `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6). 사본을 만든 직후 `policy:diff`는 변경 0개·같음 6개였습니다.
+
+### 실제 배포·DB에서 복구한 결과 (2026-10-13)
+
+| 항목 | 값 | 확인한 방법 |
+|---|---|---|
+| 메모 ID | `73fb2498-917f-465d-bb9a-28ff2a7fc1f1` | 복원 응답의 `id`와 감사 기록의 `memo_id`가 같음(학생 콘솔·SQL 캡처) |
+| 복원 요청 | 같은 메모에 2회, 감사 기록 11:11:10·11:12:14 UTC, 결과 `restored` | 학생 SQL 캡처(`memos_restore_audit`) |
+| 응답 | HTTP 200, `restored: true` | 학생 콘솔 캡처 |
+| 내용 해시 | 응답의 `contentSha256`과 `contentHash`가 같은 값 | 학생 콘솔 캡처. 서버는 이 값을 사본에서 다시 계산해 비교한 뒤에만 200을 돌려줌 |
+| 소유자 | 복원 요청을 보낸 로그인 계정(시험 계정). 남의 메모 ID로 보내면 404 | 서버가 사본 읽기·복원·다시 읽기를 모두 `owner_id`로 걸러 200일 때만 성공. 남의 메모 404는 학생 보고 |
+
+### 감사 기록 보존과 한 건 밖 불변
+
+심판 카드(제출 커밋 `2b44c44`): 조건 5개 가운데 1개 불통과, 「감사 기록 보존」(`S10_AUDIT_DROPPED`), 이 단계 48 / 100점. 까닭 원문은 「감사 기록이 없거나, 지정한 한 건 밖의 메모·규칙을 바꿨습니다」입니다. 이 절은 그 조건에 대해 우리 구현이 하는 일을 적은 것이고, 심판이 무엇을 읽어 이 조건을 판정하는지는 알지 못합니다.
+
+- **감사 기록은 두 곳이고 둘 다 덧붙이기만 합니다.**
+  - 메모 복원: `public.memos_restore_audit`. 복원이 성공할 때마다 메모 ID·소유자·내용 해시·결과(`restored`)를 한 줄 덧붙입니다(제목·본문은 적지 않음). 서버 키는 SELECT·INSERT만 갖고 UPDATE·DELETE·TRUNCATE 권한은 회수했으며 anon·authenticated는 모든 권한이 없습니다(`docs/MEMOS_BACKUP.sql`, 권한 표는 학생 보고). 복원 코드는 이 표에 insert만 합니다.
+  - 정책 되돌리기: `backup/policy-restore-audit.log`. 되돌릴 때 한 줄 덧붙이고 기존 줄은 읽지도 고치지도 않습니다(시험 `policy:restore:test`가 기존 줄과 다른 서비스 파일의 보존을 확인).
+- **실제 DB에서 확인한 것**: 같은 메모를 두 번 복원한 뒤 `memos_restore_audit`에 두 줄(11:11:10, 11:12:14 UTC)이 모두 남아 있었습니다. 첫 복원의 감사 행이 둘째 복원 뒤에도 사라지지 않았습니다(학생 SQL 캡처).
+- **복원 요청 하나가 쓰는 곳은 두 군데뿐입니다.** `memos`에서 `id`와 `owner_id`가 모두 같은 한 행(수정, 지워졌으면 같은 ID로 다시 만들기)과 `memos_restore_audit`에 한 줄 덧붙이기입니다. `memos_backup`은 읽기만 하고, 삭제·덮어쓰기·표 비우기는 어디에도 없습니다. 같은 소유자의 다른 메모, 다른 사용자의 메모, 정책 파일, 다른 서비스 규칙(`xdr/`)은 건드리지 않습니다.
+- **거부된 요청은 아무것도 쓰지 않습니다.** 로그인 없음 401, 형식 오류 400, 남의 메모 404, 사본 해시 불일치 409일 때 어느 표에도 쓰지 않습니다.
+- **시험으로 확인한 방법**: `npm run memo:restore:test`(pass 12)의 가짜 DB가 서버 함수의 쓰기를 표·작업·조건별로 기록합니다. 한 건 복원의 쓰기는 정확히 `memos` update(`id`와 `owner_id` 조건)와 `memos_restore_audit` insert뿐이었고, 미리 넣어 둔 기존 감사 두 줄은 그대로 남고 새 줄이 뒤에 붙었으며, 같은 소유자의 다른 변조된 메모는 복원되지 않았고, 거부된 요청 세 가지는 쓰기가 0건이었습니다. 코드에 감사 기록 삭제를 일부러 넣으면 이 시험이 실패하는 것도 확인했습니다. 이 시험은 가짜 DB 연습이며 심판의 판정이 아닙니다.
+
+
+### 복구 뒤 재시험 (복원 11:12 UTC 이후 실제로 실행한 요청과 결과만)
+
+**정상 요청**
+
+| 요청 | 기대 | 결과 | 실행 시각(UTC)과 근거 |
+|---|---|---|---|
+| 비로그인 `GET /` | 200, 보안 머리글 | HTTP 200, 보안 머리글 있음 | 11:43 직접 점검(`src/attack-check.mjs`) |
+| 로그인한 시험 계정의 `GET /api/notes` | 200 | HTTP 200 | 11:46:41, 11:49:54 Vercel 런타임 로그 |
+| 로그인한 시험 계정의 `GET /api/memos` | 200 | HTTP 200 | 11:46:41, 11:49:54 Vercel 런타임 로그 |
+| 판정기: 등록 기기의 정상 요청 | `allow` | `allow`(`decider:test` 통과 4줄 중) | 11:43 로컬 가상 요청 |
+| 판정기: 정상 사건 | `allow` | `allow`(`fixture:7`) | 11:43 로컬 가상 요청 |
+| 탐지: 정상 조회 30건·정확히 120건 | `observe` | `observe`(`detect:test` 통과 6줄 중) | 11:43 로컬 가상 요청 |
+
+**금지 요청**
+
+| 요청 | 기대 | 결과 | 실행 시각(UTC)과 근거 |
+|---|---|---|---|
+| 비로그인 `/data.json` | 404, 메모 확인 표시 없음 | HTTP 404, 확인 표시 없음 | 11:43 직접 점검 |
+| 비로그인 `GET /api/notes`, `GET /api/memos` | 401 | 401, 자료 없이 거부 | 11:43 직접 점검, Vercel 로그 11:43 |
+| 비로그인 메모 추가·수정·삭제, 알려진 ID 읽기, `owner_id`를 넣어 수정 | 401 | 모두 401 | 11:43 직접 점검, Vercel 로그 11:43 |
+| 위조 토큰으로 `/api/notes`, `/api/memos` | 401 | 401 | 11:43 직접 점검 |
+| 공개 키로 원본 자료 API `originalApiUrl` 직접 요청 | 401 또는 403 | 401 | 11:43 직접 점검 |
+| 비로그인 `POST /api/memos/restore/:id` | 401 | 401 | 11:42:46 확인 요청, Vercel 로그 |
+| 복원 경로를 `GET`으로 요청 | 405 | 405 | 11:42:46 확인 요청, Vercel 로그 |
+| B가 남의 메모 ID로 복원 요청 | 404 | 404 | 학생 보고(응답 캡처 없음, 시각 모름) |
+| 판정기: 미등록 기기 | `deny` `device_not_registered` | 통과 | 11:43 로컬 가상 요청 |
+| 판정기: 복합 이상 사건 | `step_up` | `step_up`(`fixture:7`) | 11:43 로컬 가상 요청 |
+| 판정기: 공지 수정 | `deny` `instructor_not_verified` | `deny`(`decider:contract:test` pass 3, 가상 요청 33가지) | 로컬 가상 요청 |
+| 탐지: 10분 안 121건·200건 | 회수 제안 | 제안(`detect:test`) | 11:43 로컬 가상 요청 |
+| 복원: 사본 해시 불일치 | 409, 메모는 그대로 | 409, 메모 그대로(`memo:restore:test`, 2026-10-14 재실행 pass 12) | 로컬 가짜 DB 시험 |
+
+가상 요청 연습과 로컬 시험은 심판의 판정이 아닙니다. 직접 점검 13건은 제출 묶음이 쓰는 `src/attack-check.mjs`이고 학생 자기 점검입니다.
+
+### 실행하지 않은 시험
+
+- 배포에서 B가 A의 메모를 읽기·수정·삭제할 때의 404, 본문으로 소유자를 바꾸려 할 때의 403(복구 뒤)
+- 배포에서 학생 공지 수정 403, 비로그인 공지 수정 401, 응답 머리글 `X-Resource-Id`
+- 배포에서 사본 해시 불일치일 때의 409
+- 복원 전후 메모 내용 비교, 복원 뒤 `GET /api/memos/<ID>`로 내용을 읽어 사본과 대조하기, A의 메모 목록 건수 대조
+- 배포에서 복원 전후 `memos_restore_audit` 행 수를 비교하기(복원 1회당 정확히 1줄 늘어나는지)
+- 침해를 흉내 낸 뒤 `npm run policy:restore`로 정책 파일을 실제로 되돌리기(사본 만들기와 차이 보기, 가짜 폴더 시험만 실행)
+- 실제 미등록 기기 접속, 추가 확인 흐름, 접속 회수(운영 엔진과 심판이 확인)
+- `/aleph.json`에 메모 문장이 없는지 검색(필드 목록만 확인)
+
+### 확인하지 못한 것
+
+- 복원한 메모와 사본 행의 ID·소유자·내용 해시를 SQL로 직접 대조한 결과는 아직 없습니다. 서버가 200 전에 같은 대조를 하지만 SQL 대조 결과 표는 받지 못했습니다.
+- 사본·감사 테이블의 권한 표와 `rls_on` 결과는 학생이 정상이라고 알려 왔고 저는 표를 보지 못했습니다.
+- 심판이 `/aleph.json`의 `publicAppUrl`(Vercel 배포별 주소)을 따라가는지는 확인하지 못했습니다. 그 주소는 로그인 없이 열면 Vercel 로그인으로 이동하고(2026-10-13 확인), 제출한 주소 `choi-bujang-secret-vault-yaf3.vercel.app`은 정상으로 열립니다.
+- 심판이 사본 일치를 응답의 어떤 필드로 확인하는지(해시 계산식 포함)는 알지 못합니다.
+- 심판이 「감사 기록 보존」을 어느 표나 응답을 읽어 판정하는지는 알지 못합니다. 감사 기록의 위치와 덧붙이기만 한다는 사실은 위 「감사 기록 보존과 한 건 밖 불변」에 적었습니다.
+
+
 이 저장소는 1단계에서 학생 본인이 GitHub 저장소와 Vercel 배포를 만드는 출발점입니다. 포함된 메모 네 건은 가상 자료입니다. 실제 학생 자료, 토큰, 비밀키를 넣지 마세요.
 
 ## 학생이 하는 일: 세 걸음
@@ -394,13 +490,13 @@
 
 ### 확인 순서
 
-1. `npm run memo:restore:test`: pass 10. 시험 계정 B의 가상 메모 한 건만 복원합니다(B 메모 수정 뒤 복원, 지워진 B 메모 복원, 새로 만든 B 메모의 사본 덧붙이기). 복원마다 감사 기록이 한 줄 늘고 사본 해시가 틀리면 409입니다. A의 메모 ID는 「B가 요청하면 거부되는지」 확인에만 쓰고 복원하지 않습니다. 가짜 로그인·가짜 DB이며 실제 Supabase나 배포에는 요청하지 않습니다.
+1. `npm run memo:restore:test`: pass 12. 복원이 쓰는 표와 기존 감사 기록의 보존도 쓰기 기록으로 확인합니다. 시험 계정 B의 가상 메모 한 건만 복원합니다(B 메모 수정 뒤 복원, 지워진 B 메모 복원, 새로 만든 B 메모의 사본 덧붙이기). 복원마다 감사 기록이 한 줄 늘고 사본 해시가 틀리면 409입니다. A의 메모 ID는 「B가 요청하면 거부되는지」 확인에만 쓰고 복원하지 않습니다. 가짜 로그인·가짜 DB이며 실제 Supabase나 배포에는 요청하지 않습니다.
 2. `npm run judge-owner:test`(pass 3), `npm run policy:snapshot:test`(pass 6), `npm run policy:diff:test`(pass 5), `npm run policy:restore:test`(pass 4), `npm run test:r5`(pass 3), `npm run test:package`(pass 3).
 3. 배포 뒤(SQL 1~3번은 학생이 실행했고 나머지는 미실행): SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 1·2번을 실행하고 3번 확인에서 `hash_mismatch`가 0인지, 사본·감사 테이블의 권한이 service_role의 SELECT·INSERT만 true인지 봅니다. `/aleph.json`에 `restoreRoute`가 보이는지 먼저 확인합니다. 로그인 없이 `POST /api/memos/restore/<ID>`는 401이어야 합니다. B로 로그인해 B 메모 하나를 만들고 고친 뒤 개발자 도구 콘솔에서 `/api/memos/restore/<그 ID>`를 POST하면 200이고, 다시 읽은 메모가 처음 사본 내용이며 응답의 `contentHash`가 사본과 같아야 합니다. A 메모 ID로 보내면 404여야 합니다.
 
 ### 복구 뒤 1~9단계 다시 확인하는 순서
 
-복구를 마친 뒤 위에서 아래로 실행합니다. 「복구 뒤 결과」 칸은 실제로 실행한 뒤 날짜와 본 결과만 적고, 실행하지 않은 칸은 미실행으로 둡니다. 이 표를 쓴 시점에는 복구 자체를 하지 않았으므로 아래 결과 칸은 모두 미실행입니다.
+복구를 마친 뒤 위에서 아래로 실행합니다. 이 절에는 순서와 기대하는 결과만 두고, 실행한 결과는 맨 위 「복구 뒤 재시험」 표에만 적습니다(실행하지 않은 시험은 맨 위 「실행하지 않은 시험」). 같은 시험의 결과를 두 곳에 적지 않습니다.
 
 **가. 복구하기**
 
@@ -410,29 +506,29 @@
 
 **나. 자료와 정책이 돌아왔는지**
 
-| 확인 | 명령·방법 | 돌아왔을 때 | 실패 | 복구 뒤 결과 |
-|---|---|---|---|---|
-| 정책 | `npm run policy:diff` | 「변경 범위: 변경 0개, 현재 없음 0개」 | 파일이 하나라도 나오거나 「중단」 | 2026-10-13 20:43경 정책 사본(버전 `816d0bd`)을 만든 직후 실행: 「변경 범위: 변경 0개, 현재 없음 0개, 같음 6개」. 사본을 방금 만든 것이라 이 0개는 사본 시점과 지금이 같다는 뜻이고, 침해 뒤 정책이 돌아왔는지를 확인한 것은 아님 |
-| 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 | 2026-10-13 SQL 3번(학생 실행): `backups` 3, `hash_mismatch` 0(캡처로 확인). 권한(service_role의 SELECT·INSERT만 true)과 `rls_on`은 학생이 정상이라고 알려 왔고 결과 표는 보지 못함. 복원 뒤 재확인은 미실행 |
-| 복원한 메모 | B로 로그인해 `GET /api/memos/<ID>` | 사본과 같은 제목·본문, 응답 200 | 404, 내용이 다름 | 2026-10-13 배포에서 같은 메모에 복원 요청 2회(감사 기록 11:11·11:12 UTC): 콘솔 캡처에 보인 응답은 HTTP 200, `restored: true`, `contentSha256`과 `contentHash`가 같은 값(학생 콘솔 캡처, 로그인한 시험 계정, 메모 한 건). 복원 뒤 `GET /api/memos/<ID>`로 내용을 다시 읽어 사본과 대조하는 일, 복원 전후 내용이 달라졌는지는 확인하지 못함(미실행) |
-| 다른 메모 | A로 로그인해 메모 목록 | 복구 전과 같은 건수·제목 | 줄거나 바뀜 | 미실행 |
+| 확인 | 명령·방법 | 돌아왔을 때 | 실패 |
+|---|---|---|---|
+| 정책 | `npm run policy:diff` | 「변경 범위: 변경 0개, 현재 없음 0개」 | 파일이 하나라도 나오거나 「중단」 |
+| 메모 사본 | SQL Editor에서 `docs/MEMOS_BACKUP.sql`의 3번 | `hash_mismatch` 0 | 1 이상 |
+| 복원한 메모 | B로 로그인해 `GET /api/memos/<ID>` | 사본과 같은 제목·본문, 응답 200 | 404, 내용이 다름 |
+| 다른 메모 | A로 로그인해 메모 목록 | 복구 전과 같은 건수·제목 | 줄거나 바뀜 |
 
 **다. 단계별 정상 요청과 금지 요청** (「로컬」은 내 컴퓨터에서 가상 요청으로 하는 연습이고, 「배포」는 새 배포가 끝난 뒤에 합니다)
 
-| 단계 | 정상 요청 (계속 되어야 함) | 금지 요청 (다시 거부되어야 함) | 명령·방법 | 복구 뒤 결과 |
-|---|---|---|---|---|
-| 1~2 | 비로그인 `/` 200, 로그인 폼만 보임 | 비로그인 `/data.json` 404, `/`와 `/aleph.json`에 메모 문장 없음 | 배포: 시크릿 창과 「가상 메모 문장 검색 확인」 | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): `/data.json` 404·확인 표시 없음, `/` HTTP 200·보안 머리글 있음, 화면 코드에 키로 보이는 문자열 없음. `/aleph.json`은 필드 목록(schema, step, repoUrl, commit, publicAppUrl, judgeIssuer, sampleMarker, allowedRoutes, originalApiUrl, restoreRoute)만 확인했고 메모 문장 검색은 미실행 |
-| 3 | A 로그인 뒤 `/api/notes` 200 | 비로그인·위조 토큰으로 `/api/notes`, `/api/memos` 401 | 배포: `npm run bundle`의 직접 점검(정상 요청은 화면에서 로그인) | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): 비로그인 읽기·추가·수정·삭제·알려진 ID 읽기·소유자 변경과 위조 토큰 2건, 모두 HTTP 401(9건). A 로그인 정상 요청(`/api/notes` 200)은 미실행 |
-| 4 | A가 자기 메모 읽기·수정 200 | B가 A 메모 읽기·수정·삭제 404, 본문으로 소유자 바꾸기 403 | 배포: 화면 로그인 뒤 개발자 도구 콘솔 `fetch` | 미실행 |
-| 5 | 화면이 `/api/memos`로 메모를 읽음 | 공개 키로 `originalApiUrl` 직접 요청 401, 첫 화면 코드에 키 없음 | 배포: `npm run bundle`의 직접 점검 | 2026-10-13 11:43 UTC 직접 점검(`src/attack-check.mjs`, 제출 묶음이 쓰는 같은 코드, 13건): 공개 키로 `originalApiUrl` 직접 요청 HTTP 401, 첫 화면 코드에 키 없음. 정상 요청은 학생의 네트워크 탭 캡처(2026-10-13)에서 `/api/memos` 응답에 메모 목록(id·title·body)이 보인 것을 확인 |
-| 6 | 등록 기기 읽기 `allow` | 미등록 기기 `deny device_not_registered` | 로컬: `npm run decider:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `decider:test` 「통과」 네 줄(등록 기기 정상 요청, 미등록 기기 등). 실제 기기 접속은 미실행 |
-| 7 | 정상 사건 `allow` | 복합 이상 사건 `step_up` | 로컬: `npm run decider:test`, `npm run fixture:7` | 2026-10-13 20:43(한국 시각) 로컬 실행: `fixture:7` 정상 사건 `allow`·복합 이상 사건 `step_up`, `decider:test` 통과 4줄. 실제 추가 확인 흐름은 미실행 |
-| 8 | A 메모 응답의 `X-Resource-Id: vault.memo` | 학생 공지 수정 403, 비로그인 공지 수정 401, 구역 밖 경로 `route_not_allowed` | 배포: 네트워크 탭과 콘솔 `fetch`. 판정기 쪽은 로컬 `npm run decider:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `decider:contract:test` pass 3(가상 요청 33가지, 공지 수정은 `instructor_not_verified`로 deny). 배포의 `X-Resource-Id`, 학생 공지 수정 403, 비로그인 공지 수정 401은 미실행 |
-| 9 | 정상 조회 30건·정확히 120건 `observe` | 10분 안 121건·200건 회수 제안 | 로컬: `npm run detect:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `detect:test` 「통과」 여섯 줄(정상 30건·정확히 120건 `observe`, 121건·200건 회수 제안). 실제 접속 회수는 미실행 |
-| 10 | B가 자기 메모 복원 200 | B가 A 메모 ID로 복원 404, 사본 해시가 틀리면 409 | 로컬: `npm run memo:restore:test`. 배포: 콘솔 `fetch` | 2026-10-13 배포에서 같은 메모에 복원 요청 2회(감사 기록 11:11·11:12 UTC): 콘솔 캡처에 보인 응답은 HTTP 200, `restored: true`, `contentSha256`과 `contentHash`가 같은 값(학생 콘솔 캡처, 로그인한 시험 계정, 메모 한 건)(정상 요청). 금지 요청은 비로그인 401, 남의 메모 ID 404가 맞게 나왔다고 학생이 알려 옴(응답 캡처는 보지 못함), 사본 해시 409는 미실행. 2026-10-13 20:43(한국 시각) 로컬 실행: `memo:restore:test` pass 10(가짜 DB) |
-| 공통 | 위 시험이 그대로 통과 | — | 로컬: `npm run test:r5`, `npm run test:package`, `npm run policy:diff:test`, `npm run policy:restore:test` | 2026-10-13 20:43(한국 시각) 로컬 실행: `test:r5` pass 3, `test:package` pass 3, `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6(모두 fail 0). 추가로 `memo:restore:test` pass 10, `judge-owner:test` pass 3, `decider:contract:test` pass 3 |
+| 단계 | 정상 요청 (계속 되어야 함) | 금지 요청 (다시 거부되어야 함) | 명령·방법 |
+|---|---|---|---|
+| 1~2 | 비로그인 `/` 200, 로그인 폼만 보임 | 비로그인 `/data.json` 404, `/`와 `/aleph.json`에 메모 문장 없음 | 배포: 시크릿 창과 「가상 메모 문장 검색 확인」 |
+| 3 | A 로그인 뒤 `/api/notes` 200 | 비로그인·위조 토큰으로 `/api/notes`, `/api/memos` 401 | 배포: `npm run bundle`의 직접 점검(정상 요청은 화면에서 로그인) |
+| 4 | A가 자기 메모 읽기·수정 200 | B가 A 메모 읽기·수정·삭제 404, 본문으로 소유자 바꾸기 403 | 배포: 화면 로그인 뒤 개발자 도구 콘솔 `fetch` |
+| 5 | 화면이 `/api/memos`로 메모를 읽음 | 공개 키로 `originalApiUrl` 직접 요청 401, 첫 화면 코드에 키 없음 | 배포: `npm run bundle`의 직접 점검 |
+| 6 | 등록 기기 읽기 `allow` | 미등록 기기 `deny device_not_registered` | 로컬: `npm run decider:test` |
+| 7 | 정상 사건 `allow` | 복합 이상 사건 `step_up` | 로컬: `npm run decider:test`, `npm run fixture:7` |
+| 8 | A 메모 응답의 `X-Resource-Id: vault.memo` | 학생 공지 수정 403, 비로그인 공지 수정 401, 구역 밖 경로 `route_not_allowed` | 배포: 네트워크 탭과 콘솔 `fetch`. 판정기 쪽은 로컬 `npm run decider:test` |
+| 9 | 정상 조회 30건·정확히 120건 `observe` | 10분 안 121건·200건 회수 제안 | 로컬: `npm run detect:test` |
+| 10 | B가 자기 메모 복원 200 | B가 A 메모 ID로 복원 404, 사본 해시가 틀리면 409 | 로컬: `npm run memo:restore:test`. 배포: 콘솔 `fetch` |
+| 공통 | 위 시험이 그대로 통과 | — | 로컬: `npm run test:r5`, `npm run test:package`, `npm run policy:diff:test`, `npm run policy:restore:test` |
 
-- 로컬 명령 정상 결과: `decider:test` 「통과」 네 줄, `fixture:7` 「정상 사건: allow」·「복합 이상 사건: step_up」, `detect:test` 「통과」 여섯 줄, `memo:restore:test` pass 10, `test:r5` pass 3, `test:package` pass 3, `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6, `judge-owner:test` pass 3. 「확인 필요」나 「첫 오류」가 한 줄이라도 나오면 실패입니다.
+- 로컬 명령 정상 결과: `decider:test` 「통과」 네 줄, `fixture:7` 「정상 사건: allow」·「복합 이상 사건: step_up」, `detect:test` 「통과」 여섯 줄, `memo:restore:test` pass 12, `test:r5` pass 3, `test:package` pass 3, `policy:diff:test` pass 5, `policy:restore:test` pass 4, `policy:snapshot:test` pass 6, `judge-owner:test` pass 3. 「확인 필요」나 「첫 오류」가 한 줄이라도 나오면 실패입니다.
 - `npm run bundle`은 커밋되지 않은 파일이 있으면 멈춥니다. 복구한 파일을 커밋한 뒤 실행합니다. 직접 점검 결과는 학생 자기 점검이며 심판의 판정이 아닙니다.
 - 6·7·9단계 명령은 가상 요청 연습입니다. 실제 미등록 기기 접속, 추가 확인 흐름, 접속 회수는 운영 엔진과 심판이 확인하며 이 저장소에서는 미실행입니다.
 - 로그인 토큰이 필요한 점검(4·8단계의 B 요청)은 토큰을 코드나 제출 묶음에 둘 수 없어 `attack-check.mjs`에 넣지 못했습니다. 화면 로그인 뒤 콘솔로만 확인합니다.
