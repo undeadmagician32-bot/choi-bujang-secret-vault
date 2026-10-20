@@ -119,10 +119,86 @@ function renderIdentityView({ me, devices, sessions } = {}) {
   return root;
 }
 
+// ---------- 14단계: 업무 앱 접근 요청 결과 표시 ----------
+
+// 판정 값을 한국어와 원래 값으로 함께 보여 준다. 허용만 'allow' 모양을 쓰고, 나머지는 허용처럼 보이지 않게 한다.
+const DECISION_LABEL = {
+  allow: { text: '허용', note: '정책상 접근이 허용되었습니다. 실제 앱 접속 성공을 보장하지는 않습니다.' },
+  deny: { text: '거부', note: '정책상 접근이 거부되었습니다.' },
+  challenge: { text: '추가 확인 필요', note: '접근하려면 추가 인증 또는 확인이 필요합니다. 이 앱이 확인 절차를 대신 수행하지 않습니다.' },
+  unknown: { text: '확인 불가', note: '판정을 확인할 수 없습니다. 접근이 허용되지 않은 것으로 보아야 합니다.' },
+};
+
+// 판정 시각은 내 PC 시간대로 읽기 쉽게 바꾸고 서버가 보낸 원래 값도 함께 적는다.
+function formatTime(value) {
+  if (!value) return '확인 불가';
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return `확인 불가 (${String(value)})`;
+  return `${time.toLocaleString('ko-KR')} (${value})`;
+}
+
+function decisionModeNotice(mode) {
+  if (!Object.hasOwn(MODE_NOTICE, mode)) return null;
+  const notice = node('p', MODE_NOTICE[mode], 'state state-empty');
+  notice.setAttribute('role', 'status');
+  notice.dataset.mode = mode;
+  return notice;
+}
+
+function renderDecisionView({ status, mode, data, error, appId } = {}) {
+  const root = node('div', undefined, 'student-decision');
+  const notice = decisionModeNotice(mode);
+  if (notice) root.append(notice);
+  const appText = `대상 앱: ${appId ?? '선택 안 함'}`;
+
+  if (status === 'idle') {
+    root.dataset.state = 'idle';
+    root.append(node('p', '요청 전: 앱을 골라 접속을 요청하세요.', 'state state-empty'));
+    return root;
+  }
+  if (status === 'loading') {
+    root.dataset.state = 'loading';
+    root.append(node('p', appText), node('p', '판정 확인 중', 'state state-loading'));
+    return root;
+  }
+  if (status === 'error') {
+    // 요청 실패는 서버의 거부 판정과 다르다. 허용으로도, 거부로도 보이지 않게 따로 표시한다.
+    root.dataset.state = 'error';
+    const message = error && error.message ? error.message : '서버 메시지 없음';
+    const box = node('p', `요청 실패: ${message}`, 'state state-error');
+    box.setAttribute('role', 'alert');
+    root.append(node('p', appText), box, node('p', '이것은 접근 거부 판정이 아닙니다. 판정을 받지 못했으므로 접근이 허용되지 않은 상태로 보아야 합니다.'));
+    return root;
+  }
+  if (status !== 'ok' || !data) {
+    root.dataset.state = 'unknown';
+    root.append(node('p', appText), node('p', '확인 불가(unknown): 판정을 받지 못했습니다. 허용되지 않음.', 'decision decision-unknown'));
+    return root;
+  }
+
+  // 목록에 없는 decision은 확인 불가(unknown)로 처리한다.
+  const known = Object.hasOwn(DECISION_LABEL, data.decision);
+  const code = known ? data.decision : 'unknown';
+  const label = DECISION_LABEL[code];
+  root.dataset.state = 'ok';
+  root.dataset.decision = code;
+  root.append(node('p', `대상 앱: ${data.appId ?? appId ?? '확인 불가'}`));
+  const result = node('p', `판정: ${label.text}(${code})`, `decision decision-${code}`);
+  result.setAttribute('role', 'status');
+  root.append(result);
+  if (!known) root.append(node('p', `서버가 보낸 판정 값: ${String(data.decision ?? '값 없음')} (목록에 없는 값)`));
+  root.append(node('p', label.note));
+  const list = node('dl');
+  row(list, '판정 이유', node('span', data.reason ? String(data.reason) : '이유 없음'));
+  row(list, '판정 시각', node('span', formatTime(data.checkedAt)));
+  root.append(list);
+  return root;
+}
+
 export function createStudentView() {
   return {
     renderIdentity(input) { return renderIdentityView(input); },
-    renderDecision() { return '학생 구현 대기: 서버의 판정과 이유를 연결하세요.'; },
+    renderDecision(input) { return renderDecisionView(input); },
     renderEvents() { return '학생 구현 대기: 본인 접속·XDR 기록을 연결하세요.'; },
     renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
     renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
