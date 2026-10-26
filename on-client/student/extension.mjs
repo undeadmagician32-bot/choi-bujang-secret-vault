@@ -548,7 +548,8 @@ function aiErrorBox(error, what) {
 function renderAiConnectionView({ status, mode, data, error, checkedAt } = {}) {
   // 매번 새 요소를 만들므로 이전 점검 결과나 오류 안내가 남지 않는다.
   const root = node('div', undefined, 'student-ai-connection');
-  const notice = decisionModeNotice(mode);
+  // 실패·취소 응답은 mode가 항상 unknown으로 온다. 회사 시스템 연결 안내와 섞이지 않게 demo·disconnected만 알린다.
+  const notice = mode === 'unknown' ? null : decisionModeNotice(mode);
   if (notice) root.append(notice);
 
   if (status === 'idle' || status == null) {
