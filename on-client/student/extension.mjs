@@ -1121,15 +1121,88 @@ function statusCard(title, source, state) {
   return card;
 }
 
-function pcValueRows(read, reasons) {
-  const list = node('dl', undefined, 'kv');
-  const missing = (key) => node('span', `확인 불가(${reasons[key]})`, 'state state-empty');
-  row(list, 'CPU', read.cpu ? node('span', `${read.cpu.percent.toFixed(1)}% 사용 (짧은 표본 1회)`) : missing('cpu'));
-  row(list, '메모리', read.memory ? node('span', `${gigabytes(read.memory.used)} / ${gigabytes(read.memory.total)} 사용`) : missing('memory'));
-  row(list, '디스크', read.disk ? node('span', `${gigabytes(read.disk.free)} 여유 / ${gigabytes(read.disk.total)}`) : missing('disk'));
-  row(list, 'Windows 방화벽', read.firewall ? node('span', read.firewall.map((p) => `${p.name} ${p.enabled ? '켜짐' : '꺼짐'}`).join(' · ')) : missing('firewall'));
-  row(list, 'Windows 기록', read.events ? node('span', `최근 24시간 경고 ${read.events.warnings}건 · 오류 ${read.events.errors}건${read.events.truncated ? ' (최대 5,000건 일부 집계)' : ''}`) : missing('events'));
-  return list;
+// 서버가 돌려준 「읽지 못한 이유」를 사람이 읽는 말로 바꾼다. 모르는 이유는 그대로 코드만 보여 준다.
+const PC_REASON_TEXT = {
+  permission_denied: '읽기 권한 없음',
+  timeout: '조회 시간 초과',
+  query_failed: '조회 실패',
+  unsupported: '이 운영체제에서 조회 안 함',
+  invalid_sample: 'CPU 표본 확인 불가',
+  invalid_response: '응답 값·단위 확인 불가',
+  cancelled: '조회 취소',
+};
+function reasonText(code) {
+  return Object.hasOwn(PC_REASON_TEXT, code) ? `${PC_REASON_TEXT[code]}(${code})` : String(code ?? 'invalid_response');
+}
+function shortTime(iso) {
+  const at = Date.parse(iso);
+  return Number.isFinite(at) ? new Date(at).toLocaleTimeString('ko-KR') : '시각 확인 불가';
+}
+
+// 비교할 세 값. 값은 제공 응답에서 꺼내기만 하고 새로 재지 않는다.
+const COMPARE_METRICS = [
+  { key: 'cpu', label: 'CPU 사용률', unit: '%', value: (r) => r.percent, show: (v) => `${v.toFixed(1)}%`, diff: (d) => `${d >= 0 ? '+' : ''}${d.toFixed(1)}%p`, word: ['높아졌습니다', '낮아졌습니다'] },
+  { key: 'memory', label: '메모리 사용량', unit: 'GB', value: (r) => r.used / 1024 ** 3, show: (v, r) => `${v.toFixed(1)} GB / ${(r.total / 1024 ** 3).toFixed(1)} GB`, diff: (d) => `${d >= 0 ? '+' : ''}${d.toFixed(1)} GB`, word: ['늘었습니다', '줄었습니다'] },
+  { key: 'disk', label: '디스크 남은 공간', unit: 'GB', value: (r) => r.free / 1024 ** 3, show: (v, r) => `${v.toFixed(1)} GB / ${(r.total / 1024 ** 3).toFixed(1)} GB`, diff: (d) => `${d >= 0 ? '+' : ''}${d.toFixed(1)} GB`, word: ['늘었습니다', '줄었습니다'] },
+];
+
+function metricCell(entry, metric) {
+  if (!entry) return '비교할 조회 없음';
+  const read = entry.read && entry.read[metric.key];
+  if (!read) return `확인 불가: ${reasonText(entry.status === 'ok' ? entry.read.reasons[metric.key] : entry.code)} · ${shortTime(entry.at)}`;
+  return `${metric.show(metric.value(read), read)} · ${shortTime(entry.at)}`;
+}
+
+function metricDiff(now, then, metric) {
+  const a = now && now.read && now.read[metric.key], b = then && then.read && then.read[metric.key];
+  if (!now || !then) return '비교할 조회 없음';
+  if (!a || !b) return '확인 불가(한쪽 값 없음)';
+  return metric.diff(metric.value(a) - metric.value(b));
+}
+
+// 한 문장 설명. 두 번만으로 경향을 말하지 않고, 짧은 표본의 한계를 함께 적는다.
+function comparisonSentence(now, previous, metric) {
+  const a = now && now.read && now.read[metric.key], b = previous && previous.read && previous.read[metric.key];
+  if (!now) return `${metric.label}: 아직 조회하지 않았습니다(확인 불가).`;
+  if (!a) return `${metric.label}: 이번 값은 확인 불가입니다(${reasonText(now.status === 'ok' ? now.read.reasons[metric.key] : now.code)}). 이전 값을 현재 값으로 쓰지 않습니다.`;
+  if (!previous || !b) return `${metric.label}: 비교할 직전 실측이 없습니다. 한 번 더 조회하면 비교합니다.`;
+  const d = metric.value(a) - metric.value(b);
+  const same = Math.abs(d) < 0.05;
+  const change = same ? '거의 같습니다' : `${metric.diff(d)} ${d > 0 ? metric.word[0] : metric.word[1]}`;
+  const limit = metric.key === 'cpu' ? ' CPU는 200ms 짧은 표본이라 한 번의 차이로 경향을 말하기 어렵습니다.' : '';
+  return `${metric.label}: 직전(${shortTime(previous.at)})보다 ${change}.${limit}`;
+}
+
+function comparisonSection(history) {
+  const section = node('section');
+  const head = node('h4', '추이 비교와 설명 ');
+  head.append(node('span', '학생이 만든 비교', 'tag tag-student'));
+  section.append(head);
+  section.append(node('p', '값은 제공 기능(/api/pc/status)이 이번에 잰 것을 그대로 씁니다. 학생 코드는 새로 재지 않고, 이 화면에서 쌓은 조회끼리 비교만 합니다. 「처음」은 이 화면을 연 뒤 남아 있는 최근 10회 중 가장 오래된 실측입니다.', 'muted'));
+  const now = history[0] || null;
+  const okOnes = history.filter((h) => h.status === 'ok');
+  const previous = okOnes.find((h) => h !== now) || null;
+  const first = okOnes.length ? okOnes[okOnes.length - 1] : null;
+  const table = node('table');
+  table.append(node('caption', `비교 (단위: CPU %, 메모리·디스크 GB=1024³바이트 · 시각은 이 PC 기준 잰 시각)`));
+  const tr0 = node('tr');
+  for (const h of ['값', '이번', '직전 실측', '직전 대비', '처음 실측', '처음 대비']) { const th = node('th', h); th.setAttribute('scope', 'col'); tr0.append(th); }
+  const thead = node('thead'); thead.append(tr0); table.append(thead);
+  const body = node('tbody');
+  for (const metric of COMPARE_METRICS) {
+    const tr = node('tr');
+    tr.dataset.metric = metric.key;
+    const th = node('th', `${metric.label}(${metric.unit})`); th.setAttribute('scope', 'row'); tr.append(th);
+    const firstCell = first && first !== now && first !== previous ? first : null;
+    for (const text of [metricCell(now, metric), metricCell(previous, metric), metricDiff(now, previous, metric), metricCell(firstCell, metric), metricDiff(now, firstCell, metric)]) tr.append(node('td', text));
+    body.append(tr);
+  }
+  table.append(body);
+  section.append(table);
+  const list = node('ul', undefined, 'plain-list');
+  for (const metric of COMPARE_METRICS) list.append(node('li', comparisonSentence(now, previous, metric)));
+  section.append(list);
+  return section;
 }
 
 function historyTable(history) {
@@ -1137,16 +1210,17 @@ function historyTable(history) {
   const caption = node('caption', `최근 조회 ${history.length}회 (새로운 것이 위, 최대 ${PC_HISTORY_MAX}회)`);
   table.append(caption);
   const head = node('tr');
-  for (const h of ['측정·시도 시각', '결과', 'CPU', '메모리 사용률', '디스크 여유']) { const th = node('th', h); th.setAttribute('scope', 'col'); head.append(th); }
+  for (const h of ['잰·시도 시각', '결과', 'CPU(%)', '메모리 사용률(%)', '디스크 여유(GB)']) { const th = node('th', h); th.setAttribute('scope', 'col'); head.append(th); }
   const thead = node('thead'); thead.append(head); table.append(thead);
   const body = node('tbody');
   history.forEach((entry, i) => {
     const tr = node('tr');
     const older = history[i + 1];
-    const cpu = entry.read?.cpu ? `${entry.read.cpu.percent.toFixed(1)}%` : '확인 불가';
+    const why = (key) => `확인 불가(${reasonText(entry.status === 'ok' ? entry.read.reasons[key] : entry.code)})`;
+    const cpu = entry.read?.cpu ? `${entry.read.cpu.percent.toFixed(1)}%` : why('cpu');
     const delta = entry.read?.cpu && older?.read?.cpu ? ` (${entry.read.cpu.percent - older.read.cpu.percent >= 0 ? '+' : ''}${(entry.read.cpu.percent - older.read.cpu.percent).toFixed(1)}%p)` : '';
-    const mem = entry.read?.memory ? `${Math.round((entry.read.memory.used / entry.read.memory.total) * 100)}%` : '확인 불가';
-    const disk = entry.read?.disk ? gigabytes(entry.read.disk.free) : '확인 불가';
+    const mem = entry.read?.memory ? `${Math.round((entry.read.memory.used / entry.read.memory.total) * 100)}%` : why('memory');
+    const disk = entry.read?.disk ? gigabytes(entry.read.disk.free) : why('disk');
     const result = entry.status === 'ok' ? `실측 ${countMeasured(entry.read)}/${PC_ITEMS.length}` : `${entry.status === 'failed' ? '실패' : '확인 불가'}(${entry.code})`;
     for (const text of [formatTime(entry.at), result, cpu + delta, mem, disk]) tr.append(node('td', text));
     body.append(tr);
@@ -1276,7 +1350,9 @@ function createDashboard({ api, onChange }) {
 
   function pcSection() {
     const section = node('section');
-    section.append(node('h4', '내 PC 실측과 추이'));
+    const title = node('h4', '내 PC 실측과 추이 ');
+    title.append(node('span', '제공 기능 값(/api/pc/status)', 'tag'));
+    section.append(title);
     section.append(node('p', '「내 PC 실측 조회」를 누를 때만 이 PC 값을 한 번 읽습니다. 자동으로 다시 읽지 않습니다. 추이는 이 화면을 연 동안만 기억하며, 새로고침하거나 앱을 끄면 사라집니다.', 'muted'));
     const loading = pc.status === 'loading';
     section.append(button(loading ? '조회 중…' : '내 PC 실측 조회', 'pc-probe', () => { void probePc(); }, (b) => { if (loading) b.setAttribute('aria-disabled', 'true'); }));
@@ -1286,15 +1362,8 @@ function createDashboard({ api, onChange }) {
     result.className = `state state-${state.tone}`;
     result.textContent = pc.status === 'ok' ? `${state.text} · 측정 ${formatTime(pc.measuredAt)} · 출처 local-pc` : state.text;
     section.append(result);
-    if (pc.status === 'ok') {
-      const values = node('div');
-      const head = node('p', '이번 조회 값 ');
-      head.append(node('span', MEASURED_TAG, 'tag tag-student'));
-      values.append(head, pcValueRows(pc.read, pc.read.reasons));
-      section.append(values);
-    } else if (history.some((h) => h.status === 'ok')) {
-      section.append(node('p', '이전 실측은 아래 추이 표에만 남깁니다. 현재 값으로 보지 않습니다.', 'muted'));
-    }
+    section.append(node('p', '이번 값 자체(CPU·메모리·디스크·방화벽·Windows 기록)는 위쪽 제공 카드 「내 PC 상태」와 같은 출처이므로 여기서 다시 나열하지 않습니다.', 'muted'));
+    section.append(comparisonSection(history));
     if (history.length) section.append(historyTable(history));
     else section.append(node('p', '아직 쌓인 실측이 없습니다. 조회한 적이 없는 상태를 정상으로 보지 않습니다.', 'state state-empty'));
     return section;
