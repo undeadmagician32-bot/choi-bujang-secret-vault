@@ -1169,7 +1169,7 @@ function comparisonSentence(now, previous, metric) {
   const d = metric.value(a) - metric.value(b);
   const same = Math.abs(d) < 0.05;
   const change = same ? '거의 같습니다' : `${metric.diff(d)} ${d > 0 ? metric.word[0] : metric.word[1]}`;
-  const limit = metric.key === 'cpu' ? ' CPU는 200ms 짧은 표본이라 한 번의 차이로 경향을 말하기 어렵습니다.' : '';
+  const limit = metric.key === 'cpu' ? ' CPU는 200ms 짧은 표본이라 한 번의 차이로 경향을 말하기 어렵습니다. 앱이 재는 순간 자체 조회로 CPU가 잠깐 오를 수 있습니다.' : '';
   return `${metric.label}: 직전(${shortTime(previous.at)})보다 ${change}.${limit}`;
 }
 
