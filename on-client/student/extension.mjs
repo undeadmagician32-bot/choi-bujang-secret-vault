@@ -1315,7 +1315,7 @@ function systemRows(pc) {
   return rows.map((row) => ({ ...row, source: SYSTEM_SOURCE[row.key], reason: row.value === null ? systemReason(pc, row.key) : null }));
 }
 
-function systemSection(pc) {
+function systemSection(pc, extra = {}) {
   const section = node('section');
   section.dataset.studentSection = 'system';
   const head = node('h4', '네트워크·방화벽·Windows 기록 ');
@@ -1324,6 +1324,11 @@ function systemSection(pc) {
   section.append(node('p', 'Windows 기록의 경고·오류 건수는 침해나 공격 탐지 결과가 아닙니다. 프로그램·드라이버·업데이트 등이 남긴 기록의 개수일 뿐이며, 내용은 읽지 않습니다.', 'state state-empty'));
   section.append(node('p', '방화벽과 보안 설정은 읽기만 합니다. 이 앱은 설정을 바꾸지 않고, 관리자 권한을 요청하거나 올리지 않습니다. 네트워크는 로컬 구성 개수이며 인터넷 접속이나 ZTNA 허용을 확인한 결과가 아닙니다.', 'muted'));
   const stale = pc.status === 'ok' && Date.now() - Date.parse(pc.measuredAt) > PC_STALE_MS;
+  if (extra.button) section.append(extra.button);
+  const wait = waitNotice(pc);
+  if (wait) { section.append(wait); section.setAttribute('aria-busy', 'true'); }
+  const failures = failureBlock(pc, ['network', 'firewall', 'events']);
+  if (failures) section.append(failures);
   if (stale) section.append(node('p', `오래됨: 마지막 실측 ${formatTime(pc.measuredAt)}. 현재 값으로 보려면 「내 PC 실측 조회」를 다시 누르세요.`, 'state state-empty'));
   const table = node('table');
   table.append(node('caption', '이번 조회 값 (단위는 항목 이름 옆 괄호, 시각은 이 PC 기준 잰 시각)'));
@@ -1359,6 +1364,53 @@ function sdpSection(statusInput) {
   return section;
 }
 
+// ---------- 4일차: 다시 조회·대기 표시·실패한 항목과 다음 할 일 ----------
+const PC_KEY_LABEL = { cpu: 'CPU', memory: '메모리', disk: '디스크', network: '네트워크', firewall: 'Windows 방화벽', events: 'Windows 기록' };
+const PC_WAIT_LIMIT = '최대 약 10초';
+
+// 실패 코드마다 다음 할 일을 정한다. 모르는 코드는 다시 조회와 기록을 권한다. 예시 값으로 채우지 않는다.
+function nextStep(code) {
+  const c = String(code ?? '');
+  if (c === 'TIMEOUT' || c === 'timeout') return '잠시 기다린 뒤 「다시 조회」를 누르세요.';
+  if (c === 'NETWORK_ERROR') return '앱을 켠 PowerShell 창이 열려 있는지 확인하고, 꺼져 있으면 다시 켠 뒤 「다시 조회」를 누르세요.';
+  if (c === 'NOT_ALLOWED' || c === 'NO_STUDENT_API' || c === 'NOT_FOUND') return '이 실행 환경에서는 학생 조회를 쓸 수 없습니다. 같은 화면 아래쪽 제공 카드 「내 PC 상태」의 「내 PC 확인」으로 보세요.';
+  if (c === 'permission_denied') return '관리자 권한으로 바꾸지 마세요. 읽기 권한이 필요하면 담당자에게 확인하세요.';
+  if (c === 'unsupported') return '이 운영체제에서는 이 항목을 읽지 않습니다. 확인 불가로 둡니다.';
+  if (c === 'CANCELLED' || c === 'cancelled') return '「다시 조회」를 누르세요.';
+  if (['PC_SHAPE_UNVERIFIED', 'INVALID_RESPONSE', 'invalid_response', 'invalid_sample'].includes(c)) return '값을 정상으로 보지 않습니다. 「다시 조회」를 누르고, 계속되면 시각과 코드를 적어 담당자에게 알리세요.';
+  return '「다시 조회」를 누르세요. 계속되면 시각과 코드를 적어 담당자에게 알리세요.';
+}
+
+// keys 안에서 읽지 못한 항목을 모은다. 조회 전체가 실패하면 한 줄로 묶는다.
+function failedItems(pc, keys) {
+  if (['failed', 'unverifiable', 'unsupported'].includes(pc.status)) {
+    return [{ what: `이번 조회 전체(${keys.map((k) => PC_KEY_LABEL[k]).join('·')})`, why: reasonText(pc.code), next: nextStep(pc.code) }];
+  }
+  if (pc.status !== 'ok') return [];
+  return keys.filter((k) => !pc.read[k]).map((k) => ({ what: PC_KEY_LABEL[k], why: reasonText(pc.read.reasons[k]), next: nextStep(pc.read.reasons[k]) }));
+}
+
+function failureBlock(pc, keys) {
+  const items = failedItems(pc, keys);
+  if (!items.length) return null;
+  const box = node('div');
+  box.dataset.studentFailures = 'true';
+  box.append(node('p', `실패한 항목과 다음 할 일 (${items.length}개) · 예시 값으로 채우지 않습니다`, 'state state-error'));
+  const list = node('ul', undefined, 'plain-list');
+  for (const item of items) {
+    const li = node('li');
+    li.append(node('p', `${item.what}: 확인 불가`, 'item-title'), node('p', `이유: ${item.why}`, 'muted'), node('p', `다음 할 일: ${item.next}`));
+    list.append(li);
+  }
+  box.append(list);
+  return box;
+}
+
+function waitNotice(pc) {
+  if (pc.status !== 'loading') return null;
+  return node('p', `대기 중: 이 PC 값을 읽고 있습니다(시작 ${shortTime(pc.startedAt)}, ${PC_WAIT_LIMIT}). 끝나면 이 자리에 결과가 나옵니다. 이전 값은 현재 값으로 쓰지 않습니다.`, 'state state-loading');
+}
+
 function createDashboard({ api, onChange }) {
   let pc = { status: 'idle' };
   let pcGeneration = 0;
@@ -1377,7 +1429,7 @@ function createDashboard({ api, onChange }) {
     if (pc.status === 'loading') return;
     if (!api || typeof api.get !== 'function') { pc = { status: 'unsupported', code: 'NO_STUDENT_API' }; changed(); return; }
     const own = ++pcGeneration;
-    pc = { status: 'loading' };
+    pc = { status: 'loading', startedAt: new Date().toISOString() };
     changed();
     let result;
     try { result = await api.get(PC_PATH); } catch { result = { ok: false, error: { code: 'CLIENT_ERROR' } }; }
@@ -1428,20 +1480,47 @@ function createDashboard({ api, onChange }) {
     if (target) target.focus({ preventScroll: true });
   }
 
+  // 첫 조회 전에는 「내 PC 실측 조회」, 한 번이라도 결과가 있으면 「다시 조회」. 조회 중에는 누를 수 있지만 중복 조회는 하지 않는다.
+  function probeButton(key) {
+    const loading = pc.status === 'loading';
+    const label = loading ? '조회 중… (대기)' : history.length ? '다시 조회' : '내 PC 실측 조회';
+    return button(label, key, () => { void probePc(); }, (b) => { if (loading) b.setAttribute('aria-disabled', 'true'); });
+  }
+
+  function jumpTarget(element, key, label) {
+    element.dataset.jump = key;
+    element.setAttribute('tabindex', '-1');
+    if (label) element.setAttribute('aria-label', label);
+    return element;
+  }
+
+  // 키보드로 핵심 기능 세 곳에 바로 간다. 버튼을 누르면 그 제목으로 포커스를 옮긴다.
+  function jumpNav() {
+    const nav = node('nav');
+    nav.setAttribute('aria-label', '핵심 기능 바로 가기');
+    nav.append(node('span', '바로 가기: ', 'muted'));
+    const go = (key) => () => { const target = root && root.querySelector ? root.querySelector(`[data-jump="${key}"]`) : null; if (target) target.focus(); };
+    for (const [key, text] of [['cards', '1 상태 카드'], ['pc', '2 내 PC 실측과 추이'], ['signals', '3 이상 징후 근거 기록']]) nav.append(button(text, `jump-${key}`, go(key)), node('span', ' '));
+    return nav;
+  }
+
   function pcSection() {
     const section = node('section');
-    const title = node('h4', '내 PC 실측과 추이 ');
+    const title = jumpTarget(node('h4', '내 PC 실측과 추이 '), 'pc');
     title.append(node('span', '제공 기능 값(/api/pc/status)', 'tag'));
     section.append(title);
     section.append(node('p', '「내 PC 실측 조회」를 누를 때만 이 PC 값을 한 번 읽습니다. 자동으로 다시 읽지 않습니다. 추이는 이 화면을 연 동안만 기억하며, 새로고침하거나 앱을 끄면 사라집니다.', 'muted'));
-    const loading = pc.status === 'loading';
-    section.append(button(loading ? '조회 중…' : '내 PC 실측 조회', 'pc-probe', () => { void probePc(); }, (b) => { if (loading) b.setAttribute('aria-disabled', 'true'); }));
+    section.append(probeButton('pc-probe'));
     const result = node('p', undefined, 'state');
     result.setAttribute('role', 'status');
     const state = pcCardState(pc, Date.now());
     result.className = `state state-${state.tone}`;
-    result.textContent = pc.status === 'ok' ? `${state.text} · 측정 ${formatTime(pc.measuredAt)} · 출처 local-pc` : state.text;
+    const wait = waitNotice(pc);
+    result.textContent = wait ? wait.textContent : pc.status === 'ok' ? `${state.text} · 측정 ${formatTime(pc.measuredAt)} · 출처 local-pc` : state.text;
     section.append(result);
+    if (wait) section.setAttribute('aria-busy', 'true');
+    const failures = failureBlock(pc, Object.keys(PC_KEY_LABEL));
+    if (failures) section.append(failures);
     section.append(node('p', '이번 값 자체(CPU·메모리·디스크)는 같은 화면 아래쪽의 제공 카드 「내 PC 상태」와 같은 출처이므로 여기서 다시 나열하지 않습니다. 네트워크·방화벽·Windows 기록은 아래 칸에서 시각·단위와 함께 정리합니다.', 'muted'));
     section.append(comparisonSection(history));
     if (history.length) section.append(historyTable(history));
@@ -1451,7 +1530,7 @@ function createDashboard({ api, onChange }) {
 
   function signalSection() {
     const section = node('section');
-    section.append(node('h4', '이상 징후 근거 기록'));
+    section.append(jumpTarget(node('h4', '이상 징후 근거 기록'), 'signals'));
     section.append(node('p', '판정이 아니라 관찰입니다. 출처·시각과 그것만으로 말할 수 없는 것을 함께 적습니다. 방화벽이 모두 켜진 것은 목록에 넣지 않습니다.', 'muted'));
     const signals = collectSignals(lastStatus, pc);
     if (!signals.length) {
@@ -1477,14 +1556,16 @@ function createDashboard({ api, onChange }) {
       const legend = node('p', '표시: ');
       legend.append(node('span', MEASURED_TAG, 'tag tag-student'), node('span', ' = 이 PC·이 앱 서버가 이번에 돌려준 값, '), node('span', EXAMPLE_TAG, 'tag tag-demo'), node('span', ' = 설명용 고정 값'));
       next.append(legend);
-      cards = node('div', undefined, 'grid-2');
+      next.append(jumpNav());
+      cards = jumpTarget(node('div', undefined, 'grid-2'), 'cards', '상태 카드 4개');
       cards.dataset.studentCards = 'status';
       cards.append(...renderCards());
       next.append(cards);
+      // 핵심 기능 세 가지(상태 카드 → 내 PC 실측과 추이 → 이상 징후 근거 기록)를 먼저, 3일차 칸은 그 아래에 둔다.
       next.append(pcSection());
-      next.append(systemSection(pc));
-      next.append(sdpSection(lastStatus));
       next.append(signalSection());
+      next.append(systemSection(pc, { button: probeButton('pc-probe-system') }));
+      next.append(sdpSection(lastStatus));
       const toggle = button(showExample ? '예시 숨기기' : '예시 보기', 'example-toggle', () => { showExample = !showExample; changed(); }, (b) => {
         b.setAttribute('aria-pressed', showExample ? 'true' : 'false');
         b.setAttribute('aria-controls', 'student-dashboard-example');
