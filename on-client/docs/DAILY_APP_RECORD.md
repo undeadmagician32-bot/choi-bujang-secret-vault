@@ -285,3 +285,66 @@ Windows 기록 건수는 3일차(오후 8:22, 경고 26·오류 26)보다 늘었
 3. 풀린 폴더의 `Daat-blockage\on-client`에서 `docs\RUN_GUIDE.md`만 보고 1번부터 따라 합니다.
 4. 첫 화면에서 「내 PC 실측 조회」를 눌러 「실측 6/6」이 나오는지 봅니다. 「SDP 미연결」은 SDP 설정 없이 켰을 때의 정상 표시입니다.
 5. 막힌 단계와 화면·PowerShell 문구를 그대로 적습니다. 없으면 「막힌 곳 없음」.
+
+## 11. 마무리 제출 정리 (2026-10-28)
+
+포장 명령(`npm run package-app`)은 실행하지 않았고 새 포장 스크립트도 만들지 않았습니다. 포장 없이 프로젝트 폴더에서 실행하는 형태로 제출합니다. 기존 프로젝트 폴더와 이미 낸 제출물(22단계 기록 등)은 지우거나 옮기지 않았습니다.
+
+### 11.1 저장소
+
+- 주소: `https://github.com/undeadmagician32-bot/choi-bujang-secret-vault.git`
+- 브랜치: `daat-13` (로컬 `master`에서 `git push origin master:daat-13`으로 올림, 강제 push 없음)
+- 최종 커밋 번호: 이 절을 담은 커밋을 만들면 번호가 바뀌므로 파일 안에는 적지 않습니다. `git rev-parse HEAD`로 확인합니다(11.4).
+
+### 11.2 22단계 기록(`f25e9fe`) 이후 바뀐 파일
+
+| 파일 | 구분 | 내용 |
+|---|---|---|
+| `student/extension.mjs` | 학생 작업 | 관제 대시보드(상태 카드 4개·내 PC 실측과 추이·이상 징후 근거 기록), 추이 비교와 설명, 네트워크·방화벽·Windows 기록 칸과 SDP 미연결 구분, 다시 조회·대기 표시·실패한 항목과 다음 할 일·키보드 바로 가기 |
+| `student/appearance.json` | 학생 작업(새 파일) | `dashboardPreset: student-first` |
+| `docs/DAILY_APP_RECORD.md` | 학생 작업(새 파일) | 이 기록 |
+| `docs/RUN_GUIDE.md` | 학생 작업(새 파일) | 처음 보는 사람용 실행 안내 한 장 |
+| `.on-starter-manifest.json`, `README.md`, `package.json`, `tools/package-app-support.mjs` | 제공 파일 | 운영자가 올린 시작 틀 0.2.21(`c7a577d`)을 내용 수정 없이 반영 |
+
+### 11.3 일차별 커밋
+
+| 일차 | 커밋 | 내용 |
+|---|---|---|
+| 1일차 | `506dde9`, `7fbde32` | 관제 대시보드와 기록 문서, 핵심 3기능 지금 상태 표 |
+| 2일차 | `4fa9cf3`, `874c352` | 제공 「내 PC 상태」를 근거로 한 추이 비교, CPU 자기 측정 부하 한계 |
+| 3일차 | `3039d0e` | 네트워크·방화벽·Windows 기록 정리, SDP 미연결 구분 |
+| 4일차 | `654bded` | 핵심 3기능 먼저, 다시 조회·대기 표시, 실패한 항목과 다음 할 일, 키보드 |
+| 5일차 | `18e582f` | 실행 안내 한 장과 따라 해 본 기록 |
+| 6일차 | 이 절을 담은 커밋 | 마무리 제출 정리 |
+
+### 11.4 같은 결과를 다시 만드는 명령과 확인 순서
+
+```powershell
+# 1) 저장소 상태 (D:\claude code\Daat-blockage 에서)
+git status -sb                 # "## master...origin/daat-13" 이고 바뀐 파일이 없어야 함
+git log --oneline -n 8         # 11.3 의 커밋이 순서대로 보임
+git rev-parse HEAD             # 40자리 최종 커밋 번호
+git remote -v                  # 저장소 주소
+git fetch origin daat-13
+git rev-parse origin/daat-13   # HEAD 와 같은 번호면 GitHub 에도 올라간 것
+
+# 2) 앱 실행 (on-client 에서) — docs/RUN_GUIDE.md 와 같음
+node -v                        # v22~v24
+node --check .\student\extension.mjs
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\start-alekov.ps1
+# 브라우저: http://127.0.0.1:5189/   끄기: 같은 창에서 Ctrl+C
+```
+
+화면 확인은 9.4절(4일차) 순서를 따릅니다. 「내 PC 실측 조회」 뒤 상태 카드 「실측 6/6」, 「SDP 미연결」은 SDP 설정 없이 켰을 때의 정상 표시입니다.
+
+### 11.5 되는 것과 아직 확인하지 못한 것
+
+되는 것(이 PC 실제 화면으로 확인): 상태 카드 4개, 내 PC 실측과 추이(비교·설명), 이상 징후 근거 기록, 네트워크·방화벽·Windows 기록 칸(PowerShell 읽기 전용 명령과 값 일치), SDP 미연결 구분, 다시 조회·대기 표시·실패한 항목과 다음 할 일, 키보드 바로 가기·포커스 유지, 새 폴더에서 안내문만 보고 실행.
+
+아직 확인하지 못한 것:
+- 안내문 작성에 관여하지 않은 다른 사람의 실행(10.2절)
+- 설치형 앱에서의 화면(포장하지 않았으므로 확인 대상 아님)
+- 실제 SDP 서버·AI 연결 상태(연결 설정 없이 실행)
+- 화면 읽기 프로그램으로 대기 알림을 듣는 확인
+
+값 구분: 화면의 `실측`은 이 PC에서 이번에 읽은 값, `예시(실제 조회 아님)`은 「예시 보기」를 눌렀을 때만 나오는 설명용 고정 값입니다(1절).
