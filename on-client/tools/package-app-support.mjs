@@ -122,7 +122,7 @@ export async function sourceProvenance(plan,gitPath='git'){
       if(autocrlf==='true'){
         let convertedFiles=0,eligible=true;
         for(const {row,original,bytes} of rawMismatch){
-          if(!original||!['100644','100755'].includes(original.mode)||bytes.includes(0)||!bytes.includes(13)||/\r(?!\n)|(?<!\r)\n/u.test(bytes.toString('latin1'))){eligible=false;break;}
+          if(!original||!['100644','100755'].includes(original.mode)||bytes.includes(0)||!bytes.includes(13)||/\r(?!\n)/u.test(bytes.toString('latin1'))){eligible=false;break;}
           const fullPath=relative?relative+'/'+row.path:row.path;
           const attrBytes=await git(['check-attr','-z','text','eol','filter','working-tree-encoding','ident','--',fullPath],top),parts=attrBytes.toString('utf8').split('\0');
           const attrNames=['text','eol','filter','working-tree-encoding','ident'];
