@@ -1004,14 +1004,364 @@ function renderVulnerabilitiesView({ status, mode, data, error } = {}) {
   return root;
 }
 
-export function createStudentView() {
+// ---------- 권장 제작 기간: 관제 대시보드(보호 현황 renderStatus 칸) ----------
+// 맨 위 상태 카드 4개 → 내 PC 실측과 추이 → 이상 징후 근거 기록 → 16단계 상세 순서로 보여 준다.
+// 실측(이 PC·이 앱 서버가 이번에 돌려준 값)과 예시(설명용 고정 값)는 섞지 않는다.
+
+const PC_PATH = '/api/pc/status';
+const PC_SCHEMA = 'aleph.on.pc-status.v1';
+const PC_STALE_MS = 60 * 1000;
+const PC_HISTORY_MAX = 10;
+const PC_ITEMS = ['CPU', '메모리', '디스크', 'Windows 방화벽', 'Windows 기록'];
+const FIREWALL_PROFILES = ['Domain', 'Private', 'Public'];
+const MEASURED_TAG = '실측';
+const EXAMPLE_TAG = '예시(실제 조회 아님)';
+
+const isNumber = (n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+const gigabytes = (bytes) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+
+// 받은 PC 값을 항목별로 다시 확인한다. 형식이 맞지 않는 항목은 값을 버리고 확인 불가로 둔다.
+function readPcMetrics(metrics = {}) {
+  const out = { cpu: null, memory: null, disk: null, firewall: null, events: null };
+  const { cpu, memory, disk, firewall, events } = metrics;
+  if (cpu?.state === 'ok' && isNumber(cpu.usagePercent) && cpu.usagePercent <= 100) out.cpu = { percent: cpu.usagePercent, sampleMs: cpu.sampleMs };
+  if (memory?.state === 'ok' && isNumber(memory.usedBytes) && isNumber(memory.totalBytes) && memory.totalBytes > 0 && memory.usedBytes <= memory.totalBytes) out.memory = { used: memory.usedBytes, total: memory.totalBytes };
+  if (disk?.state === 'ok' && isNumber(disk.freeBytes) && isNumber(disk.totalBytes) && disk.totalBytes > 0 && disk.freeBytes <= disk.totalBytes) out.disk = { free: disk.freeBytes, total: disk.totalBytes };
+  if (firewall?.state === 'ok' && Array.isArray(firewall.profiles) && FIREWALL_PROFILES.every((name) => firewall.profiles.some((p) => p?.name === name && typeof p.enabled === 'boolean'))) {
+    out.firewall = FIREWALL_PROFILES.map((name) => ({ name, enabled: firewall.profiles.find((p) => p.name === name).enabled }));
+  }
+  if (events?.state === 'ok' && isCount(events.warningCount) && isCount(events.errorCount) && typeof events.truncated === 'boolean') {
+    out.events = { warnings: events.warningCount, errors: events.errorCount, truncated: events.truncated, since: events.since };
+  }
+  const reasons = {};
+  for (const [key, raw] of Object.entries({ cpu, memory, disk, firewall, events })) if (!out[key]) reasons[key] = SAFE_CODE.test(String(raw?.reason ?? '').toUpperCase()) ? String(raw.reason) : 'invalid_response';
+  return { ...out, reasons };
+}
+
+function countMeasured(read) {
+  return ['cpu', 'memory', 'disk', 'firewall', 'events'].filter((key) => read[key]).length;
+}
+
+// 앱 서버 응답을 상태 하나로 정리한다. 실패·지원 없음·형식 확인 불가를 서로 다르게 둔다.
+function classifyPcResult(result) {
+  if (!result || result.ok !== true) {
+    const raw = result?.error?.code;
+    const code = SAFE_CODE.test(String(raw ?? '')) ? raw : 'UNKNOWN_ERROR';
+    return code === 'NOT_ALLOWED' ? { status: 'unsupported', code } : { status: 'failed', code };
+  }
+  const data = result.data;
+  const at = typeof data?.measuredAt === 'string' ? Date.parse(data.measuredAt) : NaN;
+  if (data?.schema !== PC_SCHEMA || data.source !== 'local-pc' || !Number.isFinite(at)) return { status: 'unverifiable', code: 'PC_SHAPE_UNVERIFIED' };
+  const read = readPcMetrics(data.metrics);
+  return { status: 'ok', measuredAt: data.measuredAt, read };
+}
+
+function pcCardState(pc, now) {
+  if (pc.status === 'idle') return { tone: 'empty', text: '아직 조회 안 함(확인 불가)', next: '아래 「내 PC 실측 조회」를 직접 누르세요.' };
+  if (pc.status === 'loading') return { tone: 'loading', text: '조회 중', next: '결과가 오기 전에는 이전 값을 현재 값으로 보지 않습니다.' };
+  if (pc.status === 'unsupported') return { tone: 'empty', text: `지원 없음(${pc.code})`, next: '위쪽 제공 카드 「내 PC 상태」에서 확인하세요.' };
+  if (pc.status === 'failed') return { tone: 'error', text: `조회 실패(${pc.code})`, next: '이전 값은 현재 상태가 아닙니다. 다시 조회하세요.' };
+  if (pc.status === 'unverifiable') return { tone: 'empty', text: `확인 불가(${pc.code})`, next: '응답 형식을 확인하지 못했습니다. 정상으로 보지 않습니다.' };
+  const measured = countMeasured(pc.read);
+  const missing = PC_ITEMS.length - measured;
+  if (now - Date.parse(pc.measuredAt) > PC_STALE_MS) return { tone: 'empty', text: `오래됨: 마지막 실측 ${formatTime(pc.measuredAt)}`, next: '1분이 지났습니다. 현재 상태로 보려면 다시 조회하세요.' };
+  if (!measured) return { tone: 'empty', text: `응답은 왔지만 실측 0/${PC_ITEMS.length}`, next: '항목을 하나도 읽지 못했으므로 성공으로 보지 않습니다.' };
+  return { tone: missing ? 'empty' : 'ok', text: `실측 ${measured}/${PC_ITEMS.length}${missing ? ` · 확인 불가 ${missing}개` : ''}`, next: '값은 아래 「내 PC 실측과 추이」에서 봅니다.' };
+}
+
+function engineCardState({ devices, sessions, notifications, mode } = {}) {
+  const items = Array.isArray(notifications) ? notifications : [];
+  const notConnected = items.filter((item) => item && item.code === 'ENGINE_NOT_CONNECTED').length;
+  if (devices?.status === 'loading' || sessions?.status === 'loading') return { tone: 'loading', text: '불러오는 중', next: '결과를 기다립니다.' };
+  if (mode === 'disconnected' || notConnected) return { tone: 'error', text: `연결 없음${notConnected ? ` · ENGINE_NOT_CONNECTED ${notConnected}건` : ''}`, next: '담당자 안내가 있을 때만 SDP 연결 설정으로 실행합니다.' };
+  if (mode === 'demo') return { tone: 'empty', text: '예제 자료(demo)', next: '실제 회사 시스템의 값이 아닙니다.' };
+  if (mode === 'connected' && devices?.status === 'ok' && sessions?.status === 'ok') return { tone: 'ok', text: '연결됨: 기기·세션 응답 받음', next: '아래 상세에서 기기·세션 상태를 봅니다.' };
+  return { tone: 'empty', text: '확인 불가', next: '위쪽 「다시 불러오기」를 직접 누르세요.' };
+}
+
+function aiCardState(ai) {
+  if (!ai || ai.status === 'idle' || ai.status == null) return { tone: 'empty', text: '점검 전', next: '「AI 연결」 카드의 계정 연결·AI 앱 승인 뒤 「현재 API 연결 점검」을 직접 누르세요.' };
+  if (ai.status === 'loading') return { tone: 'loading', text: '점검 중', next: '결과를 기다립니다.' };
+  if (ai.status === 'error') {
+    const code = SAFE_CODE.test(String(ai.error?.code ?? '')) ? ai.error.code : 'UNKNOWN_ERROR';
+    return { tone: 'error', text: `점검 실패(${code})`, next: '연결 성공으로 보지 않습니다. 원인은 아래 「학생 AI 연결 표시」에서 봅니다.' };
+  }
+  if (ai.status === 'ok' && ai.data?.transportChecked === true && Object.hasOwn(AI_AUDIENCE, ai.data.audienceAuthorization)) {
+    return { tone: 'ok', text: `모델 응답 확인: ${AI_AUDIENCE[ai.data.audienceAuthorization]}`, next: '모델 목록만 점검했습니다. 사건 설명 성공과는 별개입니다.', at: ai.checkedAt };
+  }
+  return { tone: 'empty', text: '확인 불가', next: '점검 결과를 확인할 수 없습니다.' };
+}
+
+function scanCardState(scan) {
+  if (!scan || scan.status === 'idle' || scan.status == null) return { tone: 'empty', text: '조회 전(취약점 없음 아님)', next: '「설치 패키지 조회」를 직접 누르세요.' };
+  if (scan.status === 'loading') return { tone: 'loading', text: '조회 중', next: '이전 결과는 현재 결과가 아닙니다.' };
+  if (scan.status === 'error') {
+    const code = SAFE_CODE.test(String(scan.error?.code ?? '')) ? scan.error.code : 'UNKNOWN_ERROR';
+    return { tone: 'error', text: `조회 실패(${code})`, next: '취약점 없음이 아닙니다. 다시 조회하세요.' };
+  }
+  const data = scan.data || {};
+  const known = Object.hasOwn(SCAN_STATUS_TEXT, data.status) ? SCAN_STATUS_TEXT[data.status] : null;
+  if (scan.status !== 'ok' || !known) return { tone: 'empty', text: '확인 불가', next: '조회 결과 형식을 확인하지 못했습니다.' };
+  const code = SAFE_CODE.test(String(data.code ?? '')) ? ` · ${data.code}` : '';
+  const tone = data.status === 'complete' ? 'ok' : data.status === 'partial' ? 'error' : 'empty';
+  return { tone, text: `${known}${code}`, next: data.status === 'complete' ? 'OSV에 알려진 항목만 대조했습니다. 전체 안전 보장이 아닙니다.' : '취약점 없음으로 보지 않습니다.', at: data.checkedAt };
+}
+
+function statusCard(title, source, state) {
+  const card = node('section', undefined, 'card');
+  card.dataset.studentCard = title;
+  const head = node('h4', `${title} `);
+  head.append(node('span', MEASURED_TAG, 'tag tag-student'));
+  card.append(head);
+  card.append(node('p', state.text, `state state-${state.tone}`));
+  card.append(node('p', `확인 시각: ${state.at ? formatTime(state.at) : '없음'}`, 'muted'));
+  card.append(node('p', `다음 행동: ${state.next}`));
+  card.append(node('p', `출처: ${source}`, 'muted'));
+  return card;
+}
+
+function pcValueRows(read, reasons) {
+  const list = node('dl', undefined, 'kv');
+  const missing = (key) => node('span', `확인 불가(${reasons[key]})`, 'state state-empty');
+  row(list, 'CPU', read.cpu ? node('span', `${read.cpu.percent.toFixed(1)}% 사용 (짧은 표본 1회)`) : missing('cpu'));
+  row(list, '메모리', read.memory ? node('span', `${gigabytes(read.memory.used)} / ${gigabytes(read.memory.total)} 사용`) : missing('memory'));
+  row(list, '디스크', read.disk ? node('span', `${gigabytes(read.disk.free)} 여유 / ${gigabytes(read.disk.total)}`) : missing('disk'));
+  row(list, 'Windows 방화벽', read.firewall ? node('span', read.firewall.map((p) => `${p.name} ${p.enabled ? '켜짐' : '꺼짐'}`).join(' · ')) : missing('firewall'));
+  row(list, 'Windows 기록', read.events ? node('span', `최근 24시간 경고 ${read.events.warnings}건 · 오류 ${read.events.errors}건${read.events.truncated ? ' (최대 5,000건 일부 집계)' : ''}`) : missing('events'));
+  return list;
+}
+
+function historyTable(history) {
+  const table = node('table');
+  const caption = node('caption', `최근 조회 ${history.length}회 (새로운 것이 위, 최대 ${PC_HISTORY_MAX}회)`);
+  table.append(caption);
+  const head = node('tr');
+  for (const h of ['측정·시도 시각', '결과', 'CPU', '메모리 사용률', '디스크 여유']) { const th = node('th', h); th.setAttribute('scope', 'col'); head.append(th); }
+  const thead = node('thead'); thead.append(head); table.append(thead);
+  const body = node('tbody');
+  history.forEach((entry, i) => {
+    const tr = node('tr');
+    const older = history[i + 1];
+    const cpu = entry.read?.cpu ? `${entry.read.cpu.percent.toFixed(1)}%` : '확인 불가';
+    const delta = entry.read?.cpu && older?.read?.cpu ? ` (${entry.read.cpu.percent - older.read.cpu.percent >= 0 ? '+' : ''}${(entry.read.cpu.percent - older.read.cpu.percent).toFixed(1)}%p)` : '';
+    const mem = entry.read?.memory ? `${Math.round((entry.read.memory.used / entry.read.memory.total) * 100)}%` : '확인 불가';
+    const disk = entry.read?.disk ? gigabytes(entry.read.disk.free) : '확인 불가';
+    const result = entry.status === 'ok' ? `실측 ${countMeasured(entry.read)}/${PC_ITEMS.length}` : `${entry.status === 'failed' ? '실패' : '확인 불가'}(${entry.code})`;
+    for (const text of [formatTime(entry.at), result, cpu + delta, mem, disk]) tr.append(node('td', text));
+    body.append(tr);
+  });
+  table.append(body);
+  return table;
+}
+
+// 이상 징후는 판정이 아니라 관찰이다. 각 항목에 「무엇을 봤는지」와 「그것만으로 말할 수 없는 것」을 함께 둔다.
+function collectSignals(statusInput, pc) {
+  const out = [];
+  const items = Array.isArray(statusInput?.notifications) ? statusInput.notifications : [];
+  for (const item of items) {
+    out.push({
+      what: `[${resourceName(item && item.resource)}] ${safeDiagnosticValue(item && item.code)}`,
+      source: '앱 서버 응답(보호 현황 알림)',
+      limit: item && item.code === 'ENGINE_NOT_CONNECTED' ? '연결이 없다는 사실입니다. 공격이나 침해를 뜻하지 않습니다.' : '앱이 받은 상태 값입니다. 원인은 따로 확인해야 합니다.',
+    });
+  }
+  if (pc.status === 'ok' && Date.now() - Date.parse(pc.measuredAt) <= PC_STALE_MS) {
+    const { read } = pc;
+    const at = formatTime(pc.measuredAt);
+    const off = read.firewall ? read.firewall.filter((p) => !p.enabled).map((p) => p.name) : [];
+    if (off.length) out.push({ what: `Windows 방화벽 꺼진 프로필: ${off.join(', ')}`, source: `이 PC 실측 · ${at}`, limit: '설정 관찰입니다. 이 앱은 설정을 바꾸지 않습니다.' });
+    if (read.events && read.events.errors > 0) out.push({ what: `최근 24시간 Windows 오류 기록 ${read.events.errors}건${read.events.truncated ? ' (일부 집계)' : ''}`, source: `이 PC 실측 · ${at}`, limit: '건수만 셌습니다. 기록 내용이 없으므로 침해 판정이 아닙니다.' });
+    if (read.cpu && read.cpu.percent >= 90) out.push({ what: `CPU ${read.cpu.percent.toFixed(1)}%`, source: `이 PC 실측 · ${at}`, limit: '짧은 표본 한 번입니다. 어떤 프로그램인지, 계속되는지 더 봐야 합니다.' });
+    if (read.memory && read.memory.used / read.memory.total >= 0.85) out.push({ what: `메모리 사용 ${Math.round((read.memory.used / read.memory.total) * 100)}%`, source: `이 PC 실측 · ${at}`, limit: '사용량만으로 악성코드를 판정하지 않습니다.' });
+    if (read.disk && read.disk.free / read.disk.total < 0.1) out.push({ what: `디스크 여유 ${gigabytes(read.disk.free)}`, source: `이 PC 실측 · ${at}`, limit: '공간 부족 관찰입니다. 지우기 전에 파일을 확인합니다.' });
+  }
+  return out;
+}
+
+const EXAMPLE_ROWS = [
+  ['10:00:00', '실측 5/5', '35.0%', '62%', '120.0 GB'],
+  ['10:05:00', '실패(TIMEOUT)', '확인 불가', '확인 불가', '확인 불가'],
+  ['10:10:00', '실측 3/5', '92.0%', '88%', '80.0 GB'],
+];
+
+function exampleSection() {
+  const section = node('section', undefined, 'card');
+  section.id = 'student-dashboard-example';
+  section.dataset.example = 'true';
+  const head = node('h4', '예시 화면 ');
+  head.append(node('span', EXAMPLE_TAG, 'tag tag-demo'));
+  section.append(head);
+  section.append(node('p', '설명용 고정 값입니다. 이 PC에서 잰 값이 아니며, 위 상태 카드·실측 추이·이상 징후 기록에 섞지 않습니다. 실패와 일부 실측이 표에서 어떻게 보이는지 보여 주려는 것입니다.', 'muted'));
+  const table = node('table');
+  table.append(node('caption', `${EXAMPLE_TAG}: 추이 표 모양`));
+  const head2 = node('tr');
+  for (const h of ['측정 시각(예시)', '결과', 'CPU', '메모리 사용률', '디스크 여유']) { const th = node('th', h); th.setAttribute('scope', 'col'); head2.append(th); }
+  const thead = node('thead'); thead.append(head2); table.append(thead);
+  const body = node('tbody');
+  for (const values of EXAMPLE_ROWS) { const tr = node('tr'); tr.dataset.example = 'true'; for (const v of values) tr.append(node('td', `${v} (예시)`)); body.append(tr); }
+  table.append(body);
+  section.append(table);
+  return section;
+}
+
+function createDashboard({ api, onChange }) {
+  let pc = { status: 'idle' };
+  let pcGeneration = 0;
+  let history = [];
+  let showExample = false;
+  let lastStatus = null;
+  let lastAi = null;
+  let lastScan = null;
+  let root = null;
+  let cards = null;
+  let pendingFocus = null;
+  const changed = () => { if (typeof onChange === 'function') onChange(); };
+
+  // 버튼을 누를 때만 한 번 읽는다. 그리기나 onChange 안에서는 조회하지 않는다(서로 부르며 끝없이 도는 것을 막는다).
+  async function probePc() {
+    if (pc.status === 'loading') return;
+    if (!api || typeof api.get !== 'function') { pc = { status: 'unsupported', code: 'NO_STUDENT_API' }; changed(); return; }
+    const own = ++pcGeneration;
+    pc = { status: 'loading' };
+    changed();
+    let result;
+    try { result = await api.get(PC_PATH); } catch { result = { ok: false, error: { code: 'CLIENT_ERROR' } }; }
+    if (own !== pcGeneration) return;
+    pc = classifyPcResult(result);
+    history = [{ at: pc.measuredAt ?? new Date().toISOString(), status: pc.status, code: pc.code ?? null, read: pc.read ?? null }, ...history].slice(0, PC_HISTORY_MAX);
+    changed();
+  }
+
+  function renderCards() {
+    const now = Date.now();
+    const pcState = pcCardState(pc, now);
+    if (pc.status === 'ok') pcState.at = pc.measuredAt;
+    return [
+      statusCard('내 PC', `이 PC 실측(${PC_PATH})`, pcState),
+      statusCard('기존 서버(SDP) 연결', '앱 서버 응답(기기·세션·알림)', engineCardState(lastStatus || {})),
+      statusCard('AI 연결', '앱 서버의 AI 연결 점검 결과', aiCardState(lastAi)),
+      statusCard('설치 패키지 조회', '앱 서버의 OSV 조회 결과', scanCardState(lastScan)),
+    ];
+  }
+
+  // AI·패키지 칸은 보호 현황 칸보다 늦게 그려질 수 있어, 받은 즉시 이 칸의 상태 카드만 바꿔 그린다.
+  function refreshCards() {
+    if (cards && cards.isConnected) cards.replaceChildren(...renderCards());
+  }
+
+  function button(text, key, onClick, extra) {
+    const b = node('button', text, 'btn');
+    b.type = 'button';
+    b.dataset.focusKey = key;
+    if (extra) extra(b);
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function rememberFocus() {
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    if (active && root && root.contains && root.contains(active) && active.dataset && active.dataset.focusKey) pendingFocus = active.dataset.focusKey;
+  }
+
+  function restoreFocus() {
+    const key = pendingFocus;
+    pendingFocus = null;
+    if (!key || !root || !root.isConnected || !root.querySelector) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    const target = root.querySelector(`[data-focus-key="${key}"]`);
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  function pcSection() {
+    const section = node('section');
+    section.append(node('h4', '내 PC 실측과 추이'));
+    section.append(node('p', '「내 PC 실측 조회」를 누를 때만 이 PC 값을 한 번 읽습니다. 자동으로 다시 읽지 않습니다. 추이는 이 화면을 연 동안만 기억하며, 새로고침하거나 앱을 끄면 사라집니다.', 'muted'));
+    const loading = pc.status === 'loading';
+    section.append(button(loading ? '조회 중…' : '내 PC 실측 조회', 'pc-probe', () => { void probePc(); }, (b) => { if (loading) b.setAttribute('aria-disabled', 'true'); }));
+    const result = node('p', undefined, 'state');
+    result.setAttribute('role', 'status');
+    const state = pcCardState(pc, Date.now());
+    result.className = `state state-${state.tone}`;
+    result.textContent = pc.status === 'ok' ? `${state.text} · 측정 ${formatTime(pc.measuredAt)} · 출처 local-pc` : state.text;
+    section.append(result);
+    if (pc.status === 'ok') {
+      const values = node('div');
+      const head = node('p', '이번 조회 값 ');
+      head.append(node('span', MEASURED_TAG, 'tag tag-student'));
+      values.append(head, pcValueRows(pc.read, pc.read.reasons));
+      section.append(values);
+    } else if (history.some((h) => h.status === 'ok')) {
+      section.append(node('p', '이전 실측은 아래 추이 표에만 남깁니다. 현재 값으로 보지 않습니다.', 'muted'));
+    }
+    if (history.length) section.append(historyTable(history));
+    else section.append(node('p', '아직 쌓인 실측이 없습니다. 조회한 적이 없는 상태를 정상으로 보지 않습니다.', 'state state-empty'));
+    return section;
+  }
+
+  function signalSection() {
+    const section = node('section');
+    section.append(node('h4', '이상 징후 근거 기록'));
+    section.append(node('p', '판정이 아니라 관찰입니다. 출처·시각과 그것만으로 말할 수 없는 것을 함께 적습니다. 방화벽이 모두 켜진 것은 목록에 넣지 않습니다.', 'muted'));
+    const signals = collectSignals(lastStatus, pc);
+    if (!signals.length) {
+      section.append(node('p', pc.status === 'ok' ? '이번에 모은 관찰이 없습니다. 이상 없음이나 안전 판정은 아닙니다.' : '모은 관찰이 없습니다. PC 실측 전이므로 이상 없음으로 보지 않습니다.', 'state state-empty'));
+      return section;
+    }
+    const list = node('ul', undefined, 'plain-list');
+    for (const s of signals) {
+      const li = node('li');
+      li.append(node('p', s.what, 'item-title'), node('p', `출처·시각: ${s.source}`, 'muted'), node('p', `이것만으로 말할 수 없는 것: ${s.limit}`));
+      list.append(li);
+    }
+    section.append(list);
+    return section;
+  }
+
+  return {
+    render(input = {}) {
+      rememberFocus();
+      lastStatus = input;
+      const next = node('div', undefined, 'student-dashboard');
+      next.append(node('h3', '관제 대시보드'));
+      const legend = node('p', '표시: ');
+      legend.append(node('span', MEASURED_TAG, 'tag tag-student'), node('span', ' = 이 PC·이 앱 서버가 이번에 돌려준 값, '), node('span', EXAMPLE_TAG, 'tag tag-demo'), node('span', ' = 설명용 고정 값'));
+      next.append(legend);
+      cards = node('div', undefined, 'grid-2');
+      cards.dataset.studentCards = 'status';
+      cards.append(...renderCards());
+      next.append(cards);
+      next.append(pcSection());
+      next.append(signalSection());
+      const toggle = button(showExample ? '예시 숨기기' : '예시 보기', 'example-toggle', () => { showExample = !showExample; changed(); }, (b) => {
+        b.setAttribute('aria-pressed', showExample ? 'true' : 'false');
+        b.setAttribute('aria-controls', 'student-dashboard-example');
+      });
+      next.append(toggle);
+      if (showExample) next.append(exampleSection());
+      const detail = node('section');
+      detail.append(node('h4', '상세 근거: 등록 기기·현재 세션·알림·도움정보'));
+      detail.append(renderStatusView(input));
+      next.append(detail);
+      root = next;
+      if (pendingFocus) queueMicrotask(restoreFocus);
+      return next;
+    },
+    noteAi(input) { lastAi = input; refreshCards(); },
+    noteScan(input) { lastScan = input; refreshCards(); },
+  };
+}
+
+export function createStudentView({ api, onChange } = {}) {
+  const dashboard = createDashboard({ api, onChange });
   return {
     renderIdentity(input) { return renderIdentityView(input); },
     renderDecision(input) { return renderDecisionView(input); },
     renderEvents(input) { return renderEventsView(input); },
-    renderStatus(input) { return renderStatusView(input); },
-    renderVulnerabilities(input) { return renderVulnerabilitiesView(input); },
-    renderAiConnection(input) { return renderAiConnectionView(input); },
+    renderStatus(input) { return dashboard.render(input); },
+    renderVulnerabilities(input) { dashboard.noteScan(input); return renderVulnerabilitiesView(input); },
+    renderAiConnection(input) { dashboard.noteAi(input); return renderAiConnectionView(input); },
     renderExplanation(input) { return renderExplanationView(input); },
     renderAction(input) { return renderActionView(input); },
   };
