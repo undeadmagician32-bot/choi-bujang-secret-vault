@@ -1012,7 +1012,7 @@ const PC_PATH = '/api/pc/status';
 const PC_SCHEMA = 'aleph.on.pc-status.v1';
 const PC_STALE_MS = 60 * 1000;
 const PC_HISTORY_MAX = 10;
-const PC_ITEMS = ['CPU', '메모리', '디스크', 'Windows 방화벽', 'Windows 기록'];
+const PC_ITEMS = ['CPU', '메모리', '디스크', '네트워크', 'Windows 방화벽', 'Windows 기록'];
 const FIREWALL_PROFILES = ['Domain', 'Private', 'Public'];
 const MEASURED_TAG = '실측';
 const EXAMPLE_TAG = '예시(실제 조회 아님)';
@@ -1023,11 +1023,12 @@ const gigabytes = (bytes) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 
 // 받은 PC 값을 항목별로 다시 확인한다. 형식이 맞지 않는 항목은 값을 버리고 확인 불가로 둔다.
 function readPcMetrics(metrics = {}) {
-  const out = { cpu: null, memory: null, disk: null, firewall: null, events: null };
-  const { cpu, memory, disk, firewall, events } = metrics;
+  const out = { cpu: null, memory: null, disk: null, network: null, firewall: null, events: null };
+  const { cpu, memory, disk, network, firewall, events } = metrics;
   if (cpu?.state === 'ok' && isNumber(cpu.usagePercent) && cpu.usagePercent <= 100) out.cpu = { percent: cpu.usagePercent, sampleMs: cpu.sampleMs };
   if (memory?.state === 'ok' && isNumber(memory.usedBytes) && isNumber(memory.totalBytes) && memory.totalBytes > 0 && memory.usedBytes <= memory.totalBytes) out.memory = { used: memory.usedBytes, total: memory.totalBytes };
   if (disk?.state === 'ok' && isNumber(disk.freeBytes) && isNumber(disk.totalBytes) && disk.totalBytes > 0 && disk.freeBytes <= disk.totalBytes) out.disk = { free: disk.freeBytes, total: disk.totalBytes };
+  if (network?.state === 'ok' && isCount(network.interfaceCount) && isCount(network.ipv4Count)) out.network = { interfaces: network.interfaceCount, ipv4: network.ipv4Count };
   if (firewall?.state === 'ok' && Array.isArray(firewall.profiles) && FIREWALL_PROFILES.every((name) => firewall.profiles.some((p) => p?.name === name && typeof p.enabled === 'boolean'))) {
     out.firewall = FIREWALL_PROFILES.map((name) => ({ name, enabled: firewall.profiles.find((p) => p.name === name).enabled }));
   }
@@ -1035,12 +1036,12 @@ function readPcMetrics(metrics = {}) {
     out.events = { warnings: events.warningCount, errors: events.errorCount, truncated: events.truncated, since: events.since };
   }
   const reasons = {};
-  for (const [key, raw] of Object.entries({ cpu, memory, disk, firewall, events })) if (!out[key]) reasons[key] = SAFE_CODE.test(String(raw?.reason ?? '').toUpperCase()) ? String(raw.reason) : 'invalid_response';
+  for (const [key, raw] of Object.entries({ cpu, memory, disk, network, firewall, events })) if (!out[key]) reasons[key] = SAFE_CODE.test(String(raw?.reason ?? '').toUpperCase()) ? String(raw.reason) : 'invalid_response';
   return { ...out, reasons };
 }
 
 function countMeasured(read) {
-  return ['cpu', 'memory', 'disk', 'firewall', 'events'].filter((key) => read[key]).length;
+  return ['cpu', 'memory', 'disk', 'network', 'firewall', 'events'].filter((key) => read[key]).length;
 }
 
 // 앱 서버 응답을 상태 하나로 정리한다. 실패·지원 없음·형식 확인 불가를 서로 다르게 둔다.
@@ -1060,7 +1061,7 @@ function classifyPcResult(result) {
 function pcCardState(pc, now) {
   if (pc.status === 'idle') return { tone: 'empty', text: '아직 조회 안 함(확인 불가)', next: '아래 「내 PC 실측 조회」를 직접 누르세요.' };
   if (pc.status === 'loading') return { tone: 'loading', text: '조회 중', next: '결과가 오기 전에는 이전 값을 현재 값으로 보지 않습니다.' };
-  if (pc.status === 'unsupported') return { tone: 'empty', text: `지원 없음(${pc.code})`, next: '위쪽 제공 카드 「내 PC 상태」에서 확인하세요.' };
+  if (pc.status === 'unsupported') return { tone: 'empty', text: `지원 없음(${pc.code})`, next: '같은 화면 아래쪽의 제공 카드 「내 PC 상태」에서 확인하세요.' };
   if (pc.status === 'failed') return { tone: 'error', text: `조회 실패(${pc.code})`, next: '이전 값은 현재 상태가 아닙니다. 다시 조회하세요.' };
   if (pc.status === 'unverifiable') return { tone: 'empty', text: `확인 불가(${pc.code})`, next: '응답 형식을 확인하지 못했습니다. 정상으로 보지 않습니다.' };
   const measured = countMeasured(pc.read);
@@ -1074,7 +1075,7 @@ function engineCardState({ devices, sessions, notifications, mode } = {}) {
   const items = Array.isArray(notifications) ? notifications : [];
   const notConnected = items.filter((item) => item && item.code === 'ENGINE_NOT_CONNECTED').length;
   if (devices?.status === 'loading' || sessions?.status === 'loading') return { tone: 'loading', text: '불러오는 중', next: '결과를 기다립니다.' };
-  if (mode === 'disconnected' || notConnected) return { tone: 'error', text: `연결 없음${notConnected ? ` · ENGINE_NOT_CONNECTED ${notConnected}건` : ''}`, next: '담당자 안내가 있을 때만 SDP 연결 설정으로 실행합니다.' };
+  if (mode === 'disconnected' || notConnected) return { tone: 'error', text: `SDP 미연결${notConnected ? ` · ENGINE_NOT_CONNECTED ${notConnected}건` : ''}`, next: '담당자 안내가 있을 때만 SDP 연결 설정으로 실행합니다.' };
   if (mode === 'demo') return { tone: 'empty', text: '예제 자료(demo)', next: '실제 회사 시스템의 값이 아닙니다.' };
   if (mode === 'connected' && devices?.status === 'ok' && sessions?.status === 'ok') return { tone: 'ok', text: '연결됨: 기기·세션 응답 받음', next: '아래 상세에서 기기·세션 상태를 봅니다.' };
   return { tone: 'empty', text: '확인 불가', next: '위쪽 「다시 불러오기」를 직접 누르세요.' };
@@ -1254,9 +1255,9 @@ function collectSignals(statusInput, pc) {
 }
 
 const EXAMPLE_ROWS = [
-  ['10:00:00', '실측 5/5', '35.0%', '62%', '120.0 GB'],
+  ['10:00:00', '실측 6/6', '35.0%', '62%', '120.0 GB'],
   ['10:05:00', '실패(TIMEOUT)', '확인 불가', '확인 불가', '확인 불가'],
-  ['10:10:00', '실측 3/5', '92.0%', '88%', '80.0 GB'],
+  ['10:10:00', '실측 3/6', '92.0%', '88%', '80.0 GB'],
 ];
 
 function exampleSection() {
@@ -1276,6 +1277,85 @@ function exampleSection() {
   for (const values of EXAMPLE_ROWS) { const tr = node('tr'); tr.dataset.example = 'true'; for (const v of values) tr.append(node('td', `${v} (예시)`)); body.append(tr); }
   table.append(body);
   section.append(table);
+  return section;
+}
+
+// ---------- 3일차: 네트워크·방화벽·Windows 기록 정리, SDP 연결은 따로 ----------
+// 값은 제공 기능(/api/pc/status)이 일반 권한으로 읽은 것만 쓴다. 설정을 바꾸거나 권한을 올리지 않는다.
+const SYSTEM_SOURCE = {
+  network: '제공 기능 · Node os.networkInterfaces (주소는 받지 않음)',
+  firewall: '제공 기능 · Get-NetFirewallProfile (읽기만)',
+  events: '제공 기능 · Get-WinEvent System·Application, 최근 24시간, 최대 5,000건',
+};
+
+function systemReason(pc, key) {
+  if (pc.status === 'idle') return '아직 조회 안 함';
+  if (pc.status === 'loading') return '조회 중';
+  if (pc.status !== 'ok') return reasonText(pc.code);
+  const code = pc.read.reasons[key];
+  if (code === 'permission_denied') return `${reasonText(code)} · 관리자 권한이 필요할 수 있으나 권한을 올리지 않습니다`;
+  return reasonText(code);
+}
+
+function systemRows(pc) {
+  const ok = pc.status === 'ok';
+  const read = ok ? pc.read : {};
+  const at = ok ? formatTime(pc.measuredAt) : '없음';
+  const rows = [];
+  const add = (key, label, value) => rows.push({ key, label, value, at: value === null ? '없음' : at });
+  add('network', '네트워크 인터페이스(개)', read.network ? `${read.network.interfaces}개` : null);
+  add('network', 'IPv4 구성(개)', read.network ? `${read.network.ipv4}개` : null);
+  for (const name of FIREWALL_PROFILES) {
+    const p = read.firewall && read.firewall.find((v) => v.name === name);
+    add('firewall', `방화벽 ${name} 프로필(켜짐/꺼짐)`, p ? (p.enabled ? '켜짐' : '꺼짐') : null);
+  }
+  const since = read.events && Number.isFinite(Date.parse(read.events.since)) ? ` · ${formatTime(read.events.since)}부터` : '';
+  add('events', 'Windows 기록 경고(건, 최근 24시간)', read.events ? `${read.events.warnings}건${read.events.truncated ? ' (일부 집계)' : ''}${since}` : null);
+  add('events', 'Windows 기록 오류(건, 최근 24시간)', read.events ? `${read.events.errors}건${read.events.truncated ? ' (일부 집계)' : ''}${since}` : null);
+  return rows.map((row) => ({ ...row, source: SYSTEM_SOURCE[row.key], reason: row.value === null ? systemReason(pc, row.key) : null }));
+}
+
+function systemSection(pc) {
+  const section = node('section');
+  section.dataset.studentSection = 'system';
+  const head = node('h4', '네트워크·방화벽·Windows 기록 ');
+  head.append(node('span', '제공 기능 값(/api/pc/status)', 'tag'), node('span', ' '), node('span', '학생이 만든 정리', 'tag tag-student'));
+  section.append(head);
+  section.append(node('p', 'Windows 기록의 경고·오류 건수는 침해나 공격 탐지 결과가 아닙니다. 프로그램·드라이버·업데이트 등이 남긴 기록의 개수일 뿐이며, 내용은 읽지 않습니다.', 'state state-empty'));
+  section.append(node('p', '방화벽과 보안 설정은 읽기만 합니다. 이 앱은 설정을 바꾸지 않고, 관리자 권한을 요청하거나 올리지 않습니다. 네트워크는 로컬 구성 개수이며 인터넷 접속이나 ZTNA 허용을 확인한 결과가 아닙니다.', 'muted'));
+  const stale = pc.status === 'ok' && Date.now() - Date.parse(pc.measuredAt) > PC_STALE_MS;
+  if (stale) section.append(node('p', `오래됨: 마지막 실측 ${formatTime(pc.measuredAt)}. 현재 값으로 보려면 「내 PC 실측 조회」를 다시 누르세요.`, 'state state-empty'));
+  const table = node('table');
+  table.append(node('caption', '이번 조회 값 (단위는 항목 이름 옆 괄호, 시각은 이 PC 기준 잰 시각)'));
+  const tr0 = node('tr');
+  for (const h of ['항목', '값', '잰 시각', '읽은 방법', '표시']) { const th = node('th', h); th.setAttribute('scope', 'col'); tr0.append(th); }
+  const thead = node('thead'); thead.append(tr0); table.append(thead);
+  const body = node('tbody');
+  for (const row of systemRows(pc)) {
+    const tr = node('tr');
+    tr.dataset.metric = row.key;
+    const th = node('th', row.label); th.setAttribute('scope', 'row'); tr.append(th);
+    tr.append(node('td', row.value === null ? `확인 불가: ${row.reason}` : row.value), node('td', row.at), node('td', row.source));
+    const mark = node('td');
+    mark.append(row.value === null ? node('span', '확인 불가', 'state state-empty') : node('span', stale ? `${MEASURED_TAG}(오래됨)` : MEASURED_TAG, 'tag tag-student'));
+    tr.append(mark);
+    body.append(tr);
+  }
+  table.append(body);
+  section.append(table);
+  return section;
+}
+
+// SDP 연결은 PC 조회와 다른 출처(앱 서버의 기존 서버 연결)다. PC 조회가 성공해도 SDP 연결로 세지 않는다.
+function sdpSection(statusInput) {
+  const section = node('section');
+  section.dataset.studentSection = 'sdp';
+  section.append(node('h4', 'SDP 연결 (PC 조회와 별개)'));
+  const state = engineCardState(statusInput || {});
+  const p = node('p', state.text, `state state-${state.tone}`);
+  p.setAttribute('role', 'status');
+  section.append(p);
+  section.append(node('p', `출처: 앱 서버 응답(기기·세션·알림). 위 PC 실측 성공 여부와 섞지 않습니다. 다음 행동: ${state.next}`, 'muted'));
   return section;
 }
 
@@ -1362,7 +1442,7 @@ function createDashboard({ api, onChange }) {
     result.className = `state state-${state.tone}`;
     result.textContent = pc.status === 'ok' ? `${state.text} · 측정 ${formatTime(pc.measuredAt)} · 출처 local-pc` : state.text;
     section.append(result);
-    section.append(node('p', '이번 값 자체(CPU·메모리·디스크·방화벽·Windows 기록)는 위쪽 제공 카드 「내 PC 상태」와 같은 출처이므로 여기서 다시 나열하지 않습니다.', 'muted'));
+    section.append(node('p', '이번 값 자체(CPU·메모리·디스크)는 같은 화면 아래쪽의 제공 카드 「내 PC 상태」와 같은 출처이므로 여기서 다시 나열하지 않습니다. 네트워크·방화벽·Windows 기록은 아래 칸에서 시각·단위와 함께 정리합니다.', 'muted'));
     section.append(comparisonSection(history));
     if (history.length) section.append(historyTable(history));
     else section.append(node('p', '아직 쌓인 실측이 없습니다. 조회한 적이 없는 상태를 정상으로 보지 않습니다.', 'state state-empty'));
@@ -1402,6 +1482,8 @@ function createDashboard({ api, onChange }) {
       cards.append(...renderCards());
       next.append(cards);
       next.append(pcSection());
+      next.append(systemSection(pc));
+      next.append(sdpSection(lastStatus));
       next.append(signalSection());
       const toggle = button(showExample ? '예시 숨기기' : '예시 보기', 'example-toggle', () => { showExample = !showExample; changed(); }, (b) => {
         b.setAttribute('aria-pressed', showExample ? 'true' : 'false');

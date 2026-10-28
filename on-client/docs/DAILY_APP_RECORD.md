@@ -124,3 +124,63 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\start-alekov.ps1
 | 출처·잰 시각 표시 | 「실측 5/5 · 측정 2026. 10. 28. 오후 7:41:26 … · 출처 local-pc」, 제목 `제공 기능 값(/api/pc/status)`, `학생이 만든 비교` | 화면 | 됨 |
 | 코드 위치 | `src/pc-status.mjs` 3·76·81·85줄(statfs, cpus, totalmem·freemem), `src/server.mjs` 442줄(`/api/pc/status`), `student/extension.mjs` 1011·1303줄(`PC_PATH`, `api.get(PC_PATH)`) | `Select-String` 결과 | 제공 코드가 재고, 학생 코드는 그 경로를 읽기만 함 |
 | 읽지 못할 때 | 서버를 `Ctrl+C`로 끈 뒤 조회(7:44:25) | 화면 | 카드 「조회 실패(NETWORK_ERROR)」, 이번 칸 「확인 불가: NETWORK_ERROR」, 직전·처음 대비 「확인 불가(한쪽 값 없음)」, 설명 「이전 값을 현재 값으로 쓰지 않습니다」, 추이 표 실패 행. 이전 값이 이번 칸에 남지 않음 |
+
+## 8. 3일차: 네트워크·방화벽·Windows 기록 보기와 SDP 미연결 구분 (2026-10-28)
+
+### 8.1 제공 기능과 내가 바꾼 부분
+
+| 구분 | 파일 | 내용 |
+|---|---|---|
+| 제공 | `src/pc-status.mjs`, `GET /api/pc/status`, `public/pc-status-view.mjs` | 네트워크·방화벽·Windows 기록을 일반 사용자 권한으로 읽습니다. 고치지 않았습니다. |
+| 학생 | `student/extension.mjs` 대시보드 「네트워크·방화벽·Windows 기록」 칸 | 제공 응답의 값을 항목·값·잰 시각·읽은 방법·표시(실측/확인 불가)로 정리합니다. 새로 재지 않습니다. |
+| 학생 | `student/extension.mjs` 「SDP 연결 (PC 조회와 별개)」 칸, 상태 카드 문구 | SDP 연결이 없으면 「SDP 미연결」로 따로 보여 주고, PC 조회 성공 수와 섞지 않습니다. |
+| 학생 | `student/extension.mjs` PC 실측 수 | 네트워크가 더해져 5개에서 6개가 됐습니다(예: 「실측 6/6」). |
+
+| 값 | 제공 기능이 읽는 방법(일반 권한) | 단위 |
+|---|---|---|
+| 네트워크 | Node `os.networkInterfaces()`, 내부(loopback) 제외. 주소는 응답에 넣지 않음 | 인터페이스 수(개), IPv4 구성 수(개) |
+| 방화벽 | PowerShell `Get-NetFirewallProfile` (읽기만) | Domain·Private·Public 프로필별 켜짐/꺼짐 |
+| Windows 기록 | PowerShell `Get-WinEvent` System·Application, 최근 24시간, 경고(Level 3)·오류(Level 2), 최대 5,000건 | 건 |
+
+화면에 적은 한계:
+- Windows 기록의 경고·오류 건수는 침해나 공격 탐지 결과가 아닙니다. 기록의 개수일 뿐이고 내용은 읽지 않습니다.
+- 방화벽과 보안 설정은 읽기만 합니다. 앱은 설정을 바꾸지 않고 관리자 권한을 요청하거나 올리지 않습니다.
+- 권한이 없어 못 읽으면 「확인 불가: 읽기 권한 없음(permission_denied) · 관리자 권한이 필요할 수 있으나 권한을 올리지 않습니다」로 표시합니다.
+- 네트워크 개수는 로컬 구성 요약이며 인터넷 접속이나 ZTNA 허용 확인이 아닙니다.
+
+### 8.2 실행 명령
+
+4절과 같습니다. 포장 명령은 실행하지 않습니다.
+
+```powershell
+# D:\claude code\Daat-blockage\on-client 에서 PowerShell을 엽니다.
+node --check .\student\extension.mjs       # 출력이 없으면 통과
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\start-alekov.ps1
+# 브라우저: http://127.0.0.1:5189/   끄기: 같은 창에서 Ctrl+C
+```
+
+### 8.3 확인 순서
+
+| 순서 | 할 일 | 기대 결과 |
+|---|---|---|
+| 1 | 앱을 껐다 켜고 브라우저에서 Ctrl+F5 | 대시보드에 「네트워크·방화벽·Windows 기록」과 「SDP 연결 (PC 조회와 별개)」 칸이 보임 |
+| 2 | 조회 전 상태 확인 | 일곱 줄 모두 「확인 불가: 아직 조회 안 함」, SDP 칸 「SDP 미연결 · ENGINE_NOT_CONNECTED 5건」 |
+| 3 | 「내 PC 실측 조회」 1회 | 카드 「실측 6/6」, 일곱 줄에 값·잰 시각·「제공 기능 · …」·「실측」 |
+| 4 | 위쪽 제공 카드 「내 PC 상태」의 네트워크·방화벽·Windows 기록과 대조 | 같은 값(같은 출처) |
+| 5 | SDP 칸 다시 보기 | PC 조회가 성공해도 「SDP 미연결」 그대로 |
+| 6 | 1분 넘게 기다린 뒤 보기 | 「오래됨: 마지막 실측 …」, 표시 칸 「실측(오래됨)」 |
+
+모의 점검(실제 화면 아님): `mock-test-25.mjs` 61개 항목 통과. 조회 전·성공·실패(TIMEOUT)·방화벽 permission_denied·네트워크 query_failed·오래됨·SDP connected/demo, 그리고 학생 코드에 설정 변경·권한 상승 명령이 없는지 확인했습니다. 공격이나 침투를 흉내 내는 시험은 하지 않았습니다.
+
+### 8.4 이 PC 관찰 (2026-10-28, KST, 실측)
+
+| 순서 | 관찰 |
+|---|---|
+| 1 조회 전 | 오후 8:12:37 새로고침 직후: 일곱 줄 모두 「확인 불가: 아직 조회 안 함」·표시 「확인 불가」, SDP 칸 「SDP 미연결 · ENGINE_NOT_CONNECTED 5건」, 추이 「아직 쌓인 실측이 없습니다」 |
+| 2 조회 1회 | 오후 8:05:42 (2026-10-28T11:05:42.945Z) 「실측 6/6」. 네트워크 인터페이스 3개, IPv4 구성 3개, 방화벽 Domain·Private·Public 모두 켜짐, Windows 기록 경고 27건·오류 26건(2026-10-27 오후 8:05:42부터 24시간). 일곱 줄 모두 잰 시각·「제공 기능 · …」·「실측」 표시. 「침해나 공격 탐지 결과가 아닙니다」 문구 보임 |
+| 3 제공 카드와 대조 | 제공 카드 「내 PC 상태」 오후 8:13:10: 네트워크 인터페이스 3개·IPv4 구성 3개, 방화벽 Domain·Private·Public 모두 켜짐 → 대시보드(8:05:42)와 같음. Windows 기록은 경고 26건·오류 26건으로 대시보드(경고 27건)와 1건 다름. 잰 시각이 약 7분 다르고 「최근 24시간」 구간이 함께 움직이므로 생길 수 있는 차이입니다(같은 시각 대조는 미확인). 같은 응답(`/api/pc/status`)을 쓰는 것은 코드로 확인 |
+| 4 SDP 칸 | PC 실측 6/6 성공 뒤에도 상태 카드와 「SDP 연결 (PC 조회와 별개)」 칸 모두 「SDP 미연결 · ENGINE_NOT_CONNECTED 5건」 |
+| 6 오래됨 | 미확인(모의 점검으로만 확인) |
+| 7 앱 밖 대조 | 앱 오후 8:22:52 실측 6/6: 방화벽 셋 다 켜짐, 경고 26건·오류 26건. 직후 일반 PowerShell(관리자 아님) 읽기 전용 명령: `Get-NetFirewallProfile` Domain·Private·Public 모두 True, `Get-WinEvent` System·Application 최근 24시간 Level 3 = 26, Level 2 = 26 → **모두 같음** |
+
+발견한 문구 오류: `student-first` 배치에서는 학생 대시보드가 먼저 나오고 제공 카드 「내 PC 상태」는 그 아래에 있는데, 대시보드 문구가 「위쪽 제공 카드」라고 적고 있었습니다(사용자 지적, 오후 8:14).
