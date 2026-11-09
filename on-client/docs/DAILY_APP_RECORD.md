@@ -282,7 +282,7 @@ Windows 기록 건수는 3일차(오후 8:22, 경고 26·오류 26)보다 늘었
 
 1. 켜 둔 앱이 있으면 그 PowerShell 창에서 Ctrl+C로 끕니다(포트 5189 충돌 방지).
 2. `https://github.com/undeadmagician32-bot/choi-bujang-secret-vault/tree/daat-13`에서 「Code」→「Download ZIP」으로 받아 새 폴더에 풉니다.
-3. 풀린 폴더의 `Daat-blockage\on-client`에서 `docs\RUN_GUIDE.md`만 보고 1번부터 따라 합니다.
+3. 풀린 폴더의 `choi-bujang-secret-vault-daat-13\on-client`(같은 이름 폴더가 한 번 더 있으면 그 안)에서 `docs\RUN_GUIDE.md`만 보고 1번부터 따라 합니다.
 4. 첫 화면에서 「내 PC 실측 조회」를 눌러 「실측 6/6」이 나오는지 봅니다. 「SDP 미연결」은 SDP 설정 없이 켰을 때의 정상 표시입니다.
 5. 막힌 단계와 화면·PowerShell 문구를 그대로 적습니다. 없으면 「막힌 곳 없음」.
 

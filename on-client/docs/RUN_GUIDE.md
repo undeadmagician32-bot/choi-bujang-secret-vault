@@ -12,7 +12,7 @@
 ## 1. 프로젝트 폴더를 엽니다
 
 1. 파일 탐색기에서 앱 폴더의 `on-client` 폴더로 갑니다. 예: `D:\claude code\Daat-blockage\on-client`
-   - GitHub에서 ZIP으로 받았다면 풀린 폴더 안의 `Daat-blockage\on-client`입니다.
+   - GitHub에서 ZIP으로 받았다면 풀린 폴더 안의 `choi-bujang-secret-vault-daat-13\on-client`입니다. 푸는 방법에 따라 같은 이름의 폴더가 한 번 더 들어 있을 수 있으니, `on-client`가 보이는 곳까지 들어갑니다.
 2. 탐색기 위쪽 주소창을 누르고 `powershell`이라고 입력한 뒤 Enter를 누릅니다. 그 폴더에서 PowerShell 창이 열립니다.
 
 ## 2. 앱을 켭니다
